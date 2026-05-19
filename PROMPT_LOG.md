@@ -19,5 +19,14 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Obiettivo:** Generare un saluto finale motivante e rassicurante, diverso se l'utente ha interrotto per dubbi.
 - **Risultato atteso:** Saluto umano in italiano, con tono incoraggiante e rassicurante.
 
+## [19 Maggio 2026] - Prompt per spiegazioni mirate ai livelli intermedi/avanzati
+- **Azione:** Aggiornato `genera_spiegazione_alternativa()` perché risponda in modo differenziato secondo il livello `base/intermedio/avanzato`.
+- **Obiettivo:** Fornire spiegazioni più utili per utenti intermedi/avanzati usando esempio pratico e passaggi chiari.
+- **Risultato atteso:** L'AI fornisce una spiegazione mirata al livello e un output JSON strutturato con contenuti di supporto.
+
+- **Azione:** Modificato `main.py` per chiedere un dubbio specifico e passare quel contesto al prompt.
+- **Obiettivo:** Ridurre l'ambiguità del feedback dell'utente e indirizzare meglio la spiegazione alternativa.
+- **Risultato atteso:** Il tutor risponde a un punto preciso di confusione e non ripete un modulo inutile.
+
 ---
 *Aggiungi qui le prossime modifiche quando testerai i prompt su VS Code.*

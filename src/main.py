@@ -49,16 +49,24 @@ def main():
                             print("Ottimo! Procediamo al prossimo modulo.\n")
                             break
                         elif comprensione in ['no', 'n']:
-                            print("\nNo problem! Genero una spiegazione semplificata...\n")
-                            dubbio_utente = input("Puoi spiegare cosa non ti è chiaro? ").strip()
+                            print("\nNo problem! Genero una spiegazione mirata per il tuo dubbio...\n")
+                            dubbio_utente = input("Quale parte precisa non ti è chiara? Indica un termine, un passaggio o un concetto specifico: ").strip()
                             try:
                                 spiegazione_alt = genera_spiegazione_alternativa(
                                     modulo.titolo_modulo,
                                     modulo.spiegazione,
-                                    dubbio_utente
+                                    dubbio_utente,
+                                    level
                                 )
                                 print("\n--- Spiegazione Semplificata ---")
-                                print(spiegazione_alt)
+                                print(spiegazione_alt.get('spiegazione_semplificata', ''))
+                                if spiegazione_alt.get('esempio_pratico'):
+                                    print("\n--- Esempio pratico ---")
+                                    print(spiegazione_alt.get('esempio_pratico'))
+                                if spiegazione_alt.get('passaggi'):
+                                    print("\n--- Passaggi consigliati ---")
+                                    for passaggio in spiegazione_alt.get('passaggi', []):
+                                        print(f"  - {passaggio}")
                                 print()
                                 
                                 # Traccia l'argomento per il recupero

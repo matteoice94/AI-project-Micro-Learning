@@ -158,7 +158,7 @@ IMPORTANTE: Rispondi SOLO con il JSON, niente altro."""
         ) from exc
 
 
-def genera_spiegazione_alternativa(argomento: str, spiegazione_originale: str, difficolta_utente: str) -> str:
+def genera_spiegazione_alternativa(argomento: str, spiegazione_originale: str, difficolta_utente: str, livello: str) -> dict:
     """
     Genera una spiegazione alternativa quando l'utente non capisce.
     
@@ -166,13 +166,14 @@ def genera_spiegazione_alternativa(argomento: str, spiegazione_originale: str, d
         argomento: Argomento che l'utente non ha capito
         spiegazione_originale: La spiegazione che il tutor aveva fornito
         difficolta_utente: Descrizione della difficoltà dell'utente
+        livello: Livello di difficoltà dell'utente (base/intermedio/avanzato)
     
     Returns:
-        str con una spiegazione alternativa
+        dict con spiegazione semplificata, esempio pratico e passaggi consigliati
     """
     model = _get_configured_model()
     
-    alt_prompt = f"""L'utente non ha capito questo argomento. Genera una spiegazione alternativa e più semplice.
+    alt_prompt = f"""L'utente non ha capito questo argomento a livello {livello}.
 
 ARGOMENTO: {argomento}
 
@@ -182,15 +183,19 @@ DIFFICOLTA' DELL'UTENTE: {difficolta_utente}
 
 Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido nel formato:
 {{
-  "spiegazione_semplificata": "Testo della spiegazione semplificata"
+  "spiegazione_semplificata": "Testo della spiegazione semplificata",
+  "esempio_pratico": "Un breve esempio concreto che illustra il concetto",
+  "passaggi": ["Primo passaggio chiaro", "Secondo passaggio", "Terzo passaggio"]
 }}
 
 La spiegazione deve essere:
-- ancora più semplice e accessibile
-- con analogie quotidiane
-- incentrata sui concetti fondamentali
-- orientata a chiarire il dubbio dell'utente
-- non più lunga di 100 parole
+- più chiara e diretta rispetto all'originale
+- indicata per un utente di livello {livello}
+- collegata ai concetti fondamentali se sei intermedio
+- se sei avanzato, includi un motivo pratico e un mini-caso d'uso
+- con un esempio concreto e passaggi pratici
+- orientata a risolvere il dubbio specifico dell'utente
+- non più lunga di 130 parole per la spiegazione
 """
     
     response = model.generate_content(
@@ -206,7 +211,11 @@ La spiegazione deve essere:
 
     try:
         result = json.loads(response_text)
-        return result.get('spiegazione_semplificata', '').strip()
+        return {
+            'spiegazione_semplificata': result.get('spiegazione_semplificata', '').strip(),
+            'esempio_pratico': result.get('esempio_pratico', '').strip(),
+            'passaggi': result.get('passaggi', []) if isinstance(result.get('passaggi', []), list) else []
+        }
     except (json.JSONDecodeError, ValueError) as exc:
         raise RuntimeError(
             f"Errore nella generazione della spiegazione semplificata: risposta non valida. \nContenuto ricevuto: {response.text[:500]}"

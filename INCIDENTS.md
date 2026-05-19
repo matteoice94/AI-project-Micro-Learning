@@ -17,6 +17,12 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 - **Errore:** Bug di indentazione su `main.py` durante la gestione della conferma sulla comprensione.
   - **Soluzione:** Corretto il blocco `if continua ...` e rivisto il ciclo di comprensione.
 
+## [19 Maggio 2026] - Miglioramento gestione confusione intermedio/avanzato
+- **Errore:** La gestione della confusione non era sufficientemente mirata per utenti di livello intermedio o avanzato.
+  - **Soluzione:** Estesa `genera_spiegazione_alternativa()` per utilizzare il livello utente e generare output strutturato con spiegazione semplificata, esempio pratico e passaggi consigliati.
+- **Errore:** La domanda di chiarimento era troppo generica.
+  - **Soluzione:** Aggiornato `main.py` per chiedere l’area precisa di confusione e passare questo dettaglio al prompt dell’AI.
+
 ---
 *Esempio di inserimento futuro:*
 - **Errore:** L'AI non rispetta il limite delle 150 parole.
