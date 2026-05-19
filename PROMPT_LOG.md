@@ -28,5 +28,14 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Obiettivo:** Ridurre l'ambiguità del feedback dell'utente e indirizzare meglio la spiegazione alternativa.
 - **Risultato atteso:** Il tutor risponde a un punto preciso di confusione e non ripete un modulo inutile.
 
+## [19 Maggio 2026] - Web interface e Streamlit
+- **Azione:** Creato `app.py` (Flask) e `streamlit_app.py` con interfaccia Streamlit.
+- **Obiettivo:** Rendere il tutor fruibile tramite browser con UI grafica e percorsi interattivi.
+- **Risultato atteso:** L’utente può usare il tutor via web, generare moduli e richiedere chiarimenti mirati senza terminale.
+
+- **Azione:** Aggiornato `requirements.txt` includendo `flask` e `streamlit`.
+- **Obiettivo:** Assicurare che l’ambiente supporti le nuove interfacce web.
+- **Risultato atteso:** Installazione completa delle dipendenze per eseguire sia Flask che Streamlit.
+
 ---
 *Aggiungi qui le prossime modifiche quando testerai i prompt su VS Code.*

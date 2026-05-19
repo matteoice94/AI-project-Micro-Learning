@@ -23,6 +23,12 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 - **Errore:** La domanda di chiarimento era troppo generica.
   - **Soluzione:** Aggiornato `main.py` per chiedere l’area precisa di confusione e passare questo dettaglio al prompt dell’AI.
 
+## [19 Maggio 2026] - Estensione interfacce web
+- **Errore:** L’applicazione era limitata al terminale e non offriva una UI grafica accessibile.
+  - **Soluzione:** Creati `app.py` (Flask), `streamlit_app.py` (Streamlit) e l’interfaccia HTML in `templates/index.html`.
+- **Errore:** La versione web non era supportata da `requirements.txt`.
+  - **Soluzione:** Aggiornato `requirements.txt` con `flask` e `streamlit`.
+
 ---
 *Esempio di inserimento futuro:*
 - **Errore:** L'AI non rispetta il limite delle 150 parole.
