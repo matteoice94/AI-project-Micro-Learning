@@ -1,3 +1,5 @@
 python-dotenv
 pydantic
 google-generativeai
+flask
+streamlit

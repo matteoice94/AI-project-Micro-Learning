@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MLPG Tutor Web</title>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --surface: #ffffff;
+            --primary: #1f7ae0;
+            --primary-dark: #155abf;
+            --text: #202124;
+            --muted: #5f6773;
+            --border: #d7dbdf;
+            --success: #0b792c;
+            --warning: #d97706;
+            --danger: #b00020;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+        .container { max-width: 1200px; margin: 20px auto; padding: 16px; }
+        .hero, .card { background: var(--surface); border-radius: 18px; box-shadow: 0 18px 50px rgba(15,23,42,.08); margin-bottom: 20px; padding: 24px; }
+        h1, h2, h3, h4 { margin: 0 0 12px 0; }
+        p { line-height: 1.7; margin: 0 0 14px 0; }
+        input, select, textarea, button { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 1rem; background: #fff; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(31,122,224,.12); }
+        textarea { resize: vertical; }
+        button { cursor: pointer; background: var(--primary); color: #fff; transition: background .2s ease, transform .15s ease; }
+        button:hover { background: var(--primary-dark); transform: translateY(-1px); }
+        .grid { display: grid; gap: 20px; }
+        .cols-3 { grid-template-columns: 1.5fr 1fr; }
+        .badge { display: inline-flex; align-items: center; justify-content: center; padding: 8px 14px; border-radius: 999px; background: #eef4ff; color: #1b4f9c; font-size: .9rem; margin-top: 8px; }
+        .error { color: var(--danger); font-weight: 600; margin-bottom: 10px; }
+        .success { color: var(--success); }
+        .hidden { display: none; }
+        .tab-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+        .tab { padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; transition: all .18s ease; }
+        .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .progress-bar { height: 12px; border-radius: 999px; background: #dfe6ef; overflow: hidden; margin-top: 14px; }
+        .progress-fill { height: 100%; width: 0%; background: var(--primary); transition: width .3s ease; }
+        .module-card { border: 1px solid #e2e8f0; border-radius: 18px; padding: 20px; background: #fbfcff; }
+        .module-card h3 { margin-top: 0; }
+        .section-title { font-size: 1.1rem; margin-bottom: 8px; }
+        .summary-block { display: grid; gap: 12px; }
+        .summary-item { background: #f8fafc; border-radius: 14px; padding: 16px; }
+        .spoiler { background: #eef2ff; color: #3730a3; padding: 12px 14px; border-radius: 12px; }
+        ul { padding-left: 20px; }
+        .small-text { color: var(--muted); font-size: .95rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <h1>MLPG Tutor Web</h1>
+            <p>Prova il tutor in un'interfaccia grafica: genera il percorso, valuta la tua soluzione e ricevi chiarimenti mirati senza terminale.</p>
+        </div>
+
+        <div class="card grid cols-3">
+            <div>
+                <div id="message" class="error"></div>
+                <label>Argomento</label>
+                <input id="topic" placeholder="Esempio: programmazione Python" />
+                <label>Livello</label>
+                <select id="level">
+                    <option value="">Seleziona...</option>
+                    <option value="base">Base</option>
+                    <option value="intermedio">Intermedio</option>
+                    <option value="avanzato">Avanzato</option>
+                </select>
+                <label>Nome (opzionale)</label>
+                <input id="name" placeholder="Es. Matteo" />
+                <button style="margin-top: 12px;" onclick="generatePath()">Genera percorso</button>
+            </div>
+            <div class="summary-block" style="padding-left: 16px;">
+                <div class="summary-item">
+                    <h2>Come funziona</h2>
+                    <p class="small-text">Genera i moduli, rispondi all'esercizio e chiedi chiarimenti puntuali. Ogni modulo può ricevere feedback e una spiegazione adattata al tuo livello.</p>
+                </div>
+                <div class="summary-item">
+                    <h3>Strumenti</h3>
+                    <ul>
+                        <li>Feedback automatico</li>
+                        <li>Chiarimenti mirati</li>
+                        <li>Riepilogo finale</li>
+                        <li>Saluto empatico</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div id="pathContainer"></div>
+
+        <div id="summaryCard" class="card hidden">
+            <h2>Riepilogo sessione</h2>
+            <div id="summaryContent"></div>
+            <button style="margin-top: 16px;" onclick="generateSalute()">Genera saluto finale</button>
+            <div id="salutoText" class="final-salute" style="margin-top: 18px; font-size: 1rem; line-height: 1.7;"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentResponse = null;
+        let currentModuleIndex = 0;
+        let puntiForza = [];
+        let diarioNote = [];
+        let interruzioneDubbio = false;
+
+        function setMessage(text) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+        }
+
+        async function generatePath() {
+            setMessage('');
+            const topic = document.getElementById('topic').value.trim();
+            const level = document.getElementById('level').value;
+            const name = document.getElementById('name').value.trim();
+
+            if (!topic || !level) {
+                setMessage('Argomento e livello sono obbligatori.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ topic, level, name }),
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    setMessage(data.error || 'Errore nella generazione.');
+                    return;
+                }
+
+                currentResponse = data.data;
+                currentModuleIndex = 0;
+                puntiForza = [];
+                diarioNote = [];
+                interruzioneDubbio = false;
+                renderPath();
+            } catch (err) {
+                setMessage('Errore di connessione. Riprova.');
+            }
+        }
+
+        function renderPath() {
+            const container = document.getElementById('pathContainer');
+            container.innerHTML = '';
+            const { percorso_studio } = currentResponse;
+
+            const header = document.createElement('div');
+            header.className = 'card';
+            header.innerHTML = `
+                <h2>Obiettivo di apprendimento</h2>
+                <p>${percorso_studio.metadati.objective_apprendimento}</p>
+                <div class="badge">Livello: ${percorso_studio.metadati.difficolta_impostata}</div>
+                <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+            `;
+            container.appendChild(header);
+
+            const tabs = document.createElement('div');
+            tabs.className = 'tab-list';
+            percorso_studio.moduli.forEach((modulo, index) => {
+                const tab = document.createElement('div');
+                tab.className = `tab ${index === currentModuleIndex ? 'active' : ''}`;
+                tab.textContent = `Modulo ${modulo.id}`;
+                tab.onclick = () => changeModule(index);
+                tabs.appendChild(tab);
+            });
+            container.appendChild(tabs);
+
+            const moduleWrapper = document.createElement('div');
+            moduleWrapper.id = 'moduleDetail';
+            container.appendChild(moduleWrapper);
+            renderModule();
+            document.getElementById('summaryCard').classList.remove('hidden');
+            updateSummary();
+        }
+
+        function renderModule() {
+            const module = currentResponse.percorso_studio.moduli[currentModuleIndex];
+            const moduleWrapper = document.getElementById('moduleDetail');
+            moduleWrapper.innerHTML = '';
+
+            const card = document.createElement('div');
+            card.className = 'card module-card';
+            card.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <h3>Modulo ${module.id}: ${module.titolo_modulo}</h3>
+                        <div class="badge">Stai lavorando su questo modulo</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="small-text">Moduli totali: ${currentResponse.percorso_studio.moduli.length}</div>
+                        <div class="small-text">Modulo attuale: ${currentModuleIndex + 1}</div>
+                    </div>
+                </div>
+                <p><strong>Spiegazione</strong></p>
+                <p>${module.spiegazione}</p>
+                <p><strong>Esercizio</strong></p>
+                <p>${module.esercizio_pratico}</p>
+                <label>La tua soluzione</label>
+                <textarea id="solution-${module.id}" rows="5" placeholder="Inserisci qui la tua risposta..."></textarea>
+                <button onclick="evaluateModule(${module.id})" style="margin-top:12px;">Valuta soluzione</button>
+                <button onclick="showClarify(${module.id})" style="margin-top:12px;background:#f3bb43;color:#202124;">Chiedi chiarimenti</button>
+                <div id="feedback-${module.id}" class="feedback"></div>
+                <div id="clarify-${module.id}" class="clarification hidden"></div>
+                <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:18px;">
+                    <button onclick="prevModule()" style="flex:1;background:#ffffff;color:var(--primary);border:1px solid var(--primary);">Modulo precedente</button>
+                    <button onclick="nextModule()" style="flex:1;">Modulo successivo</button>
+                </div>
+            `;
+            moduleWrapper.appendChild(card);
+
+            const progress = ((currentModuleIndex + 1) / currentResponse.percorso_studio.moduli.length) * 100;
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            updateTabs();
+        }
+
+        function changeModule(index) {
+            currentModuleIndex = index;
+            renderModule();
+        }
+
+        function prevModule() {
+            if (currentModuleIndex > 0) {
+                currentModuleIndex -= 1;
+                renderModule();
+            }
+        }
+
+        function nextModule() {
+            if (currentModuleIndex < currentResponse.percorso_studio.moduli.length - 1) {
+                currentModuleIndex += 1;
+                renderModule();
+            }
+        }
+
+        function updateTabs() {
+            document.querySelectorAll('.tab').forEach((tab, index) => {
+                tab.classList.toggle('active', index === currentModuleIndex);
+            });
+        }
+
+        async function evaluateModule(moduleId) {
+            setMessage('');
+            const solution = document.getElementById(`solution-${moduleId}`).value.trim();
+            const modulo = currentResponse.percorso_studio.moduli.find((m) => m.id === moduleId);
+
+            if (!solution) {
+                setMessage('Inserisci una soluzione prima di valutare.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/evaluate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ esercizio: modulo.esercizio_pratico, soluzione: solution }),
+                });
+                const data = await res.json();
+                const feedbackDiv = document.getElementById(`feedback-${moduleId}`);
+
+                if (!data.success) {
+                    feedbackDiv.innerHTML = `<p class="error">${data.error || 'Errore nella valutazione.'}</p>`;
+                    return;
+                }
+
+                puntiForza.push(data.commento_costruttivo);
+                feedbackDiv.innerHTML = `
+                    <div class="badge">Feedback ricevuto</div>
+                    <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
+                    <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
+                `;
+                updateSummary();
+            } catch (err) {
+                setMessage('Errore di connessione durante la valutazione.');
+            }
+        }
+
+        function showClarify(moduleId) {
+            const clarifyDiv = document.getElementById(`clarify-${moduleId}`);
+            if (clarifyDiv.classList.contains('hidden')) {
+                clarifyDiv.classList.remove('hidden');
+                clarifyDiv.innerHTML = `
+                    <label>Qual è il dubbio specifico?</label>
+                    <textarea id="dubbio-${moduleId}" rows="3" placeholder="Esempio: non capisco il ciclo for"></textarea>
+                    <button onclick="clarifyModule(${moduleId})" style="margin-top:10px;background:#f59e0b;color:#202124;">Genera spiegazione mirata</button>
+                `;
+            } else {
+                clarifyDiv.classList.add('hidden');
+                clarifyDiv.innerHTML = '';
+            }
+        }
+
+        async function clarifyModule(moduleId) {
+            setMessage('');
+            const dubbio = document.getElementById(`dubbio-${moduleId}`).value.trim();
+            const modulo = currentResponse.percorso_studio.moduli.find((m) => m.id === moduleId);
+            const level = document.getElementById('level').value;
+
+            if (!dubbio) {
+                setMessage('Descrivi il dubbio specifico prima di chiedere chiarimenti.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/clarify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ argomento: modulo.titolo_modulo, spiegazione: modulo.spiegazione, dubbio, livello }),
+                });
+                const data = await res.json();
+                const clarifyDiv = document.getElementById(`clarify-${moduleId}`);
+
+                if (!data.success) {
+                    clarifyDiv.innerHTML += `<p class="error">${data.error || 'Errore nella generazione della spiegazione.'}</p>`;
+                    return;
+                }
+
+                interruzioneDubbio = true;
+                diarioNote.push(`Modulo ${moduleId} - ${modulo.titolo_modulo}: ${dubbio}`);
+                clarifyDiv.innerHTML = `
+                    <div class="badge">Spiegazione mirata</div>
+                    <p><strong>Spiegazione:</strong> ${data.data.spiegazione_semplificata}</p>
+                    <p><strong>Esempio pratico:</strong> ${data.data.esempio_pratico}</p>
+                    <p><strong>Passaggi consigliati:</strong></p>
+                    <ul>${data.data.passaggi.map(p => `<li>${p}</li>`).join('')}</ul>
+                `;
+                updateSummary();
+            } catch (err) {
+                setMessage('Errore di connessione durante la generazione del chiarimento.');
+            }
+        }
+
+        function updateSummary() {
+            const summary = document.getElementById('summaryContent');
+            const level = document.getElementById('level').value || 'N/D';
+            summary.innerHTML = `
+                <div class="summary-item">
+                    <h3>Livello di partenza</h3>
+                    <p>${level}</p>
+                </div>
+                <div class="summary-item">
+                    <h3>Punti di forza</h3>
+                    <ul>${puntiForza.length ? puntiForza.map(p => `<li>${p}</li>`).join('') : '<li>Nessun feedback ancora registrato.</li>'}</ul>
+                </div>
+                <div class="summary-item">
+                    <h3>Diario di bordo (Note)</h3>
+                    <ul>${diarioNote.length ? diarioNote.map(n => `<li>${n}</li>`).join('') : '<li>Nessuna difficoltà specifica registrata.</li>'}</ul>
+                </div>
+            `;
+        }
+
+        async function generateSalute() {
+            setMessage('');
+            const name = document.getElementById('name').value.trim() || 'Studente';
+            const level = document.getElementById('level').value;
+
+            try {
+                const res = await fetch('/api/saluto', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ nome: name, livello: level, interruzione: interruzioneDubbio }),
+                });
+                const data = await res.json();
+                const salutoDiv = document.getElementById('salutoText');
+
+                if (!data.success) {
+                    setMessage(data.error || 'Errore nella generazione del saluto finale.');
+                    return;
+                }
+
+                salutoDiv.textContent = data.saluto;
+            } catch (err) {
+                setMessage('Errore di connessione durante la generazione del saluto finale.');
+            }
+        }
+    </script>
+</body>
+</html>
