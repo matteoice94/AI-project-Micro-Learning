@@ -35,9 +35,29 @@ def main():
                 try:
                     # Valuta la risposta
                     feedback = valuta_risposta(modulo.esercizio_pratico, user_solution)
-                    punti_di_forza.append(feedback.commento_costruttivo)
+                    # Raccogli i punti di forza analitici (se presenti)
+                    if feedback.punti_di_forza:
+                        punti_di_forza.extend(feedback.punti_di_forza)
+
                     print("\n--- Valutazione del Tutor ---")
                     print(f"Commento costruttivo:\n{feedback.commento_costruttivo}\n")
+                    # Mostra punti di forza e punti migliorabili separatamente
+                    if feedback.punti_di_forza:
+                        print("Punti di forza:")
+                        for p in feedback.punti_di_forza:
+                            print(f"  - {p}")
+                        print()
+                    else:
+                        print("Punti di forza: nessun punto analitico generato.\n")
+
+                    if feedback.punti_migliorabili:
+                        print("Punti migliorabili:")
+                        for pm in feedback.punti_migliorabili:
+                            print(f"  - {pm}")
+                        print()
+                    else:
+                        print("Punti migliorabili: nessun punto segnalato.\n")
+
                     print(f"Suggerimento di miglioramento:\n{feedback.suggerimento_miglioramento}\n")
                     
                     # Ciclo di comprensione

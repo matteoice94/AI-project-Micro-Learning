@@ -14,6 +14,8 @@ class Modulo(BaseModel):
 class FeedbackValutazione(BaseModel):
     commento_costruttivo: str
     suggerimento_miglioramento: str
+    punti_di_forza: Optional[List[str]] = None
+    punti_migliorabili: Optional[List[str]] = None
     errors_comprensione: Optional[List[str]] = None
 
 class PercorsoStudio(BaseModel):
