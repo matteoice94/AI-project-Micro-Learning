@@ -30,6 +30,16 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
   - **Soluzione:** Aggiornato `requirements.txt` con `flask` e `streamlit`.
 
 ---
+
+## [25 Maggio 2026] - Superamento quota giornaliera (Error 429)
+- **Data:** 25 Maggio 2026
+- **Problema:** Superamento quota giornaliera (Error 429).
+  - **Dettagli:** Le chiamate all'API Gemini restituivano errori di rate limit durante picchi di utilizzo.
+- **Soluzione adottata:** Implementazione di una logica di Retry con attesa (Exponential Backoff semplificato) e consolidamento dei prompt per ridurre il numero totale di chiamate API.
+  - **Note implementative:** Aggiunto `_call_with_retries()` in `src/generator.py` che effettua fino a 3 tentativi con attesa tra i retry; avvolte tutte le chiamate a `model.generate_content(...)`.
+- **Lezione appresa:** La progettazione efficiente del software deve sempre considerare i limiti di risorsa delle API esterne.
+
+---
 *Esempio di inserimento futuro:*
 - **Errore:** L'AI non rispetta il limite delle 150 parole.
 - **Soluzione:** Modificato il System Prompt aggiungendo un vincolo più stringente.
