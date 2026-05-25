@@ -37,6 +37,9 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
   - **Dettagli:** Le chiamate all'API Gemini restituivano errori di rate limit durante picchi di utilizzo.
 - **Soluzione adottata:** Implementazione di una logica di Retry con attesa (Exponential Backoff semplificato) e consolidamento dei prompt per ridurre il numero totale di chiamate API.
   - **Note implementative:** Aggiunto `_call_with_retries()` in `src/generator.py` che effettua fino a 3 tentativi con attesa tra i retry; avvolte tutte le chiamate a `model.generate_content(...)`.
+- **Errore attuale:** Mancata visualizzazione dei punti di forza nel riepilogo finale.
+  - **Stato:** Non risolto.
+  - **Dettagli:** Il flusso dati dei `punti_di_forza` viene raccorto correttamente ma non appare nella visualizzazione finale o nella risposta JSON del riepilogo.
 - **Lezione appresa:** La progettazione efficiente del software deve sempre considerare i limiti di risorsa delle API esterne.
 
 ---

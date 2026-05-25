@@ -38,4 +38,11 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Risultato atteso:** Installazione completa delle dipendenze per eseguire sia Flask che Streamlit.
 
 ---
+## [25 Maggio 2026] - Retry e prompt token-efficienti
+- **Azione:** Aggiunto `_call_with_retries()` in `src/generator.py` e aggiornato `Prompts/system_mlpg.md` per richiedere risposte estremamente concise e token-efficienti.
+- **Obiettivo:** Gestire gli errori 429 con un retry su backoff semplificato e ridurre il numero totale di chiamate API.
+- **Risultato atteso:** Maggiore robustezza contro i limiti quota, output JSON più compatto e meno spreco di token.
+- **Nota:** L'errore della mancata visualizzazione dei punti di forza è ancora presente e dovrà essere risolto separatamente.
+
+---
 *Aggiungi qui le prossime modifiche quando testerai i prompt su VS Code.*
