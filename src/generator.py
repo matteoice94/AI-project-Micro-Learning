@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import json
+import time
 import google.generativeai as genai
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -22,28 +23,93 @@ def _get_configured_model():
         system_instruction=system_prompt,
     )
 
+
+def _call_with_retries(callable_fn, max_retries: int = 3, wait_seconds: int = 30):
+    """Esegue la callable che chiama l'API Gemini con retry su errori di rate limit (429/ResourceExhausted).
+
+    La callable deve essere una funzione senza argomenti che esegue la chiamata a `model.generate_content(...)`
+    e ritorna l'oggetto risposta.
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return callable_fn()
+        except Exception as exc:
+            msg = str(exc)
+            is_rate = False
+            # riconosci possibili indicatori di quota esaurita
+            if '429' in msg or 'ResourceExhausted' in msg or 'rate limit' in msg.lower() or 'quota' in msg.lower():
+                is_rate = True
+
+            if is_rate and attempt < max_retries:
+                time.sleep(wait_seconds)
+                continue
+            # non è un errore di rate limit o abbiamo esaurito i retry
+            raise
+
+def _normalize_json_text(response_text: str) -> str:
+    """Pulizia base del testo restituito dal modello per renderlo JSON parsabile."""
+    text = response_text.strip()
+
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in text:
+        text = text.split("```", 1)[1].split("```", 1)[0].strip()
+
+    if "{" in text and "}" in text:
+        start = text.find("{")
+        end = text.rfind("}")
+        if end > start:
+            text = text[start:end + 1]
+
+    normalized_chars = []
+    in_string = False
+    escaped = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == '"' and not escaped:
+            in_string = not in_string
+            normalized_chars.append(ch)
+        elif ch == '\\' and not escaped:
+            normalized_chars.append(ch)
+            escaped = True
+        elif in_string and ch in ['\n', '\r']:
+            normalized_chars.append('\\n')
+            if ch == '\r' and i + 1 < len(text) and text[i + 1] == '\n':
+                i += 1
+        else:
+            normalized_chars.append(ch)
+            escaped = False
+        i += 1
+
+    return ''.join(normalized_chars)
+
+
 def generate_microlearning_path(topic: str, level: str) -> TutorResponse:
     model = _get_configured_model()
     
-    # Concatenazione dell'argomento e del livello al prompt utente
-    user_prompt = f"Argomento: {topic}\nLivello: {level}"
+    user_prompt = (
+        f"Argomento: {topic}\n"
+        f"Livello: {level}\n"
+        "Rispondi esclusivamente con un JSON valido che corrisponda esattamente alla struttura richiesta dal system prompt. "
+        "Non aggiungere testo libero o commenti."
+    )
     
-    response = model.generate_content(
+    response = _call_with_retries(lambda: model.generate_content(
         user_prompt,
         generation_config={"response_mime_type": "application/json"}
-    )
+    ))
+
+    response_text = _normalize_json_text(response.text)
 
     try:
-        return TutorResponse.model_validate_json(response.text)
-    except ValidationError as exc:
+        return TutorResponse.model_validate_json(response_text)
+    except (ValidationError, ValueError) as exc:
         raise RuntimeError(
             "Risposta Gemini non valida: il JSON generato non corrisponde al formato TutorResponse. "
-            f"Contenuto ricevuto: {response.text[:500]}"
-        ) from exc
-    except ValueError as exc:
-        raise RuntimeError(
-            "Risposta Gemini non valida: impossibile interpretare il JSON restituito. "
-            f"Contenuto ricevuto: {response.text[:500]}"
+            f"Contenuto ricevuto: {response_text[:500]}"
         ) from exc
 
 
@@ -76,24 +142,42 @@ ESERCIZIO:
 SOLUZIONE DELL'UTENTE:
 {user_solution}
 
-Fornisci una valutazione motivante e incoraggiante in formato JSON con i seguenti campi:
-- commento_costruttivo: Un commento sulla correttezza e qualità della risposta. Sii sempre incoraggiante, riconosci i punti corretti anche se la risposta non è perfetta. Non generare frustrazione.
-- suggerimento_miglioramento: Un suggerimento specifico e costruttivo per migliorare la risposta o approfondire il concetto. Se la risposta è corretta, suggerisci un'estensione o un approfondimento.
+Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido con questi campi (NESSUN ALTRO TESTO):
 
-Ricorda: il tono deve essere motivante, supportivo e mai critico o frustrante.
+{{
+    "commento_costruttivo": "Testo motivante e incoraggiante sulla risposta dell'utente; riconosci i punti corretti.",
+    "punti_di_forza": ["Massimo 3 punti analitici estratti dalla risposta dell'utente; NON COPIARE il commento o la spiegazione del tutor."],
+    "punti_migliorabili": ["Punti da correggere o approfondire; per ciascuno indica brevemente perché è impreciso/errato."],
+    "suggerimento_miglioramento": "Suggerimento pratico e concreto per migliorare o approfondire la risposta."
+}}
+
+REGOLE CHIAVE:
+- Se la risposta dell'utente rispetta i canoni di una risposta giusta, fornisci almeno 2 voci in `punti_di_forza` e almeno 2 voci in `punti_migliorabili`.
+- `punti_di_forza` deve contenere solo osservazioni analitiche sulla risposta dell'utente; non ripetere il `commento_costruttivo` né la spiegazione del tutor.
+- Se la risposta è "non lo so", completamente sbagliata o molto imprecisa, lascia `punti_di_forza` vuoto e concentra il feedback su `punti_migliorabili`.
+- `punti_migliorabili` deve elencare correzioni e miglioramenti concreti; quando la risposta è corretta, indica come renderla più precisa o chiara.
+- Rispondi SOLO con il JSON richiesto, niente altro.
 """
     
-    response = model.generate_content(
+    response = _call_with_retries(lambda: model.generate_content(
         evaluation_prompt,
         generation_config={"response_mime_type": "application/json"}
-    )
+    ))
     
+    # Richiediamo al modello di restituire anche due nuove sezioni:
+    # - punti_di_forza: una lista di brevi analisi che indicano perché certe parti della risposta sono corrette o efficaci.
+    #   NON copiare la spiegazione del tutor pari pari; analizza e sintetizza i punti di forza rilevanti della risposta dell'utente.
+    # - punti_migliorabili: una lista di punti che l'utente ha sollevato o affermato che richiedono approfondimento o correzione
+    #   (inclusi elementi totalmente sbagliati o imprecisi). Indica brevemente perché sono migliorabili.
+
     try:
         result = json.loads(response.text)
         # Valida con FeedbackValutazione
         feedback = FeedbackValutazione(
             commento_costruttivo=result.get('commento_costruttivo', ''),
-            suggerimento_miglioramento=result.get('suggerimento_miglioramento', '')
+            suggerimento_miglioramento=result.get('suggerimento_miglioramento', ''),
+            punti_di_forza=result.get('punti_di_forza', []) if isinstance(result.get('punti_di_forza', []), list) else [],
+            punti_migliorabili=result.get('punti_migliorabili', []) if isinstance(result.get('punti_migliorabili', []), list) else []
         )
         return feedback
     except (json.JSONDecodeError, ValueError, ValidationError) as exc:
@@ -115,25 +199,33 @@ def valuta_risposta(esercizio: str, risposta_utente: str) -> FeedbackValutazione
         FeedbackValutazione con commento_costruttivo e suggerimento_miglioramento
     """
     model = _get_configured_model()
-    
+
     evaluation_prompt = f"""Sei un valutatore esperto di microlearning. Valuta la seguente risposta dell'utente.
 
 ESERCIZIO: {esercizio}
 
 RISPOSTA DELL'UTENTE: {risposta_utente}
 
-Devi restituire ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
+Devi restituire ESCLUSIVAMENTE un JSON valido con questi campi:
 {{
-  "commento_costruttivo": "Scrivi un commento motivante e incoraggiante sulla risposta. Riconosci i punti corretti anche se la risposta non è perfetta. Sii sempre supportivo e mai frustrante.",
-  "suggerimento_miglioramento": "Fornisci un suggerimento specifico e costruttivo per migliorare la risposta o approfondire il concetto."
+  "commento_costruttivo": "Commento motivante e incoraggiante.",
+  "punti_di_forza": ["Max 3 punti analitici estratti dalla risposta; non copiare il commento_costruttivo."],
+  "punti_migliorabili": ["Elementi da correggere o approfondire, con breve motivo."],
+  "suggerimento_miglioramento": "Suggerimento pratico e specifico."
 }}
 
-IMPORTANTE: Rispondi SOLO con il JSON, niente altro."""
+REGOLE:
+- Se la risposta dell'utente è sostanzialmente corretta, fornisci almeno 2 voci in `punti_di_forza` e almeno 2 voci in `punti_migliorabili`.
+- `punti_di_forza` deve essere analitico, sintetico e non ripetere il `commento_costruttivo`.
+- Se la risposta è "non lo so", completamente sbagliata o molto imprecisa, lascia `punti_di_forza` vuoto e concentra il feedback su `punti_migliorabili`.
+- Non aggiungere il `commento_costruttivo` all'interno di `punti_di_forza`.
+- Rispondi SOLO con il JSON richiesto.
+"""
     
-    response = model.generate_content(
+    response = _call_with_retries(lambda: model.generate_content(
         evaluation_prompt,
         generation_config={"response_mime_type": "application/json"}
-    )
+    ))
     
     try:
         # Pulisci la risposta
@@ -144,11 +236,18 @@ IMPORTANTE: Rispondi SOLO con il JSON, niente altro."""
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0].strip()
         
+        # Modifichiamo il formato richiesto per includere 'punti_di_forza' e 'punti_migliorabili'
+        # Richiedi al modello di restituire anche queste due liste e di non copiare la spiegazione del tutor come "punti di forza".
+        if '{"commento_costruttivo"' not in evaluation_prompt:
+            pass
+
+        # Se il modello ha risposto con un JSON esteso, proviamo a caricarlo e a mappare i nuovi campi.
         result = json.loads(response_text)
-        # Valida con FeedbackValutazione
         feedback = FeedbackValutazione(
             commento_costruttivo=result.get('commento_costruttivo', ''),
-            suggerimento_miglioramento=result.get('suggerimento_miglioramento', '')
+            suggerimento_miglioramento=result.get('suggerimento_miglioramento', ''),
+            punti_di_forza=result.get('punti_di_forza', []) if isinstance(result.get('punti_di_forza', []), list) else [],
+            punti_migliorabili=result.get('punti_migliorabili', []) if isinstance(result.get('punti_migliorabili', []), list) else []
         )
         return feedback
     except (json.JSONDecodeError, ValueError, ValidationError) as exc:
@@ -198,10 +297,10 @@ La spiegazione deve essere:
 - non più lunga di 130 parole per la spiegazione
 """
     
-    response = model.generate_content(
+    response = _call_with_retries(lambda: model.generate_content(
         alt_prompt,
         generation_config={"response_mime_type": "application/json"}
-    )
+    ))
     
     response_text = response.text.strip()
     if "```json" in response_text:
@@ -254,9 +353,9 @@ def genera_saluto_finale(nome_utente: str, livello: str, interruzione_per_dubbio
             "Sii positivo, personale e incoraggiante."
         )
 
-    response = model.generate_content(
+    response = _call_with_retries(lambda: model.generate_content(
         prompt,
         generation_config={"response_mime_type": "text/plain"}
-    )
+    ))
 
     return response.text.strip()
