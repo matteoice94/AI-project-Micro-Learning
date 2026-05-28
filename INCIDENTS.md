@@ -42,6 +42,17 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
   - **Dettagli:** Il flusso dati dei `punti_di_forza` viene raccorto correttamente ma non appare nella visualizzazione finale o nella risposta JSON del riepilogo.
 - **Lezione appresa:** La progettazione efficiente del software deve sempre considerare i limiti di risorsa delle API esterne.
 
+## [28 Maggio 2026] - Correzione flusso riepilogo finale e UI
+- **Errore:** Il percorso generato dal modello richiedeva ancora l’oggetto `feedback_valutazione` incorporato, pur essendo ora gestito separatamente.
+  - **Soluzione:** Rimosso `feedback_valutazione` da `Prompts/system_mlpg.md` e aggiornato `src/models.py` per mantenere `TutorResponse` separato da `RiepilogoFinale`.
+- **Errore:** `RiepilogoFinale` conteneva ancora `commento_costruttivo` non previsto dal prompt finale.
+  - **Soluzione:** Rimosso il campo da `src/models.py` e allineata la UI per mostrare solo `punti_di_forza`, `punti_da_migliorare`, `diario_di_bordo` e `saluto_conclusivo`.
+- **Errore:** La generazione del riepilogo finale veniva eseguita prematuramente nel corso dei singoli moduli.
+  - **Soluzione:** Aggiunta funzione `genera_riepilogo_finale()` in `src/generator.py` e nuovo endpoint `/api/final-summary` in `app.py`; la UI Streamlit e HTML ora richiedono il riepilogo solo dopo l’ultimo modulo.
+- **Errore:** Possibile discrepanza Git locale/remote durante il push su GitHub.
+  - **Soluzione:** Confermato che il commit locale è stato pushato con successo su `origin/main`; il problema locale potrebbe essere dovuto a line endings o branch non allineato.
+- **Lezione appresa:** Quando si cambia un flusso architetturale, è necessario aggiornare in parallelo modello dati, logica backend e UI in tutte le interfacce.
+
 ---
 *Esempio di inserimento futuro:*
 - **Errore:** L'AI non rispetta il limite delle 150 parole.

@@ -44,5 +44,12 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Risultato atteso:** Maggiore robustezza contro i limiti quota, output JSON più compatto e meno spreco di token.
 - **Nota:** L'errore della mancata visualizzazione dei punti di forza è ancora presente e dovrà essere risolto separatamente.
 
+## [28 Maggio 2026] - Allineamento flusso finale e API cumulativo
+- **Azione:** Rifattorizzato il flusso di riepilogo finale per generarlo con una singola chiamata cumulativa dopo il terzo modulo.
+- **Obiettivo:** Eliminare le chiamate API intermedie per il riepilogo e mantenere una cronologia utente coerente tra terminale, Streamlit e UI HTML.
+- **Risultato osservato:** Il percorso iniziale ora restituisce solo `percorso_studio`, mentre il riepilogo finale viene generato separatamente tramite `genera_riepilogo_finale()`.
+- **Dettagli:** Aggiornati `src/models.py`, `src/generator.py`, `streamlit_app.py`, `templates/index.html` e `app.py`.
+- **Nota:** Il saluto conclusivo è stato spostato nella risposta del riepilogo finale e non viene più generato come output separato per ogni modulo.
+
 ---
 *Aggiungi qui le prossime modifiche quando testerai i prompt su VS Code.*
