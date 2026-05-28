@@ -4,6 +4,7 @@ from src.generator import (
     valuta_risposta,
     genera_spiegazione_alternativa,
     genera_saluto_finale,
+    genera_riepilogo_finale,
 )
 
 app = Flask(__name__)
@@ -61,6 +62,22 @@ def api_clarify():
     try:
         result = genera_spiegazione_alternativa(argomento, spiegazione, dubbio, livello)
         return jsonify({'success': True, 'data': result}), 200
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+@app.route('/api/final-summary', methods=['POST'])
+def api_final_summary():
+    data = request.json or {}
+    solutions = data.get('solutions')
+    diary = data.get('diary', [])
+    livello = data.get('livello', '').strip().lower()
+
+    if not isinstance(solutions, list) or not livello:
+        return jsonify({'success': False, 'error': 'Soluzioni e livello sono obbligatori.'}), 400
+
+    try:
+        riepilogo = genera_riepilogo_finale(solutions, diary, livello)
+        return jsonify({'success': True, 'data': riepilogo.model_dump()}), 200
     except Exception as exc:
         return jsonify({'success': False, 'error': str(exc)}), 500
 

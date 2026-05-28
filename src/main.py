@@ -1,4 +1,4 @@
-from .generator import generate_microlearning_path, valuta_risposta, genera_spiegazione_alternativa, genera_saluto_finale
+from .generator import generate_microlearning_path, valuta_risposta, genera_spiegazione_alternativa, genera_riepilogo_finale
 
 def main():
     print("=== MLPG Tutor: Generazione Percorso Microlearning ===")
@@ -14,6 +14,8 @@ def main():
     argomenti_da_recuperare = []
     punti_di_forza = []
     interruzione_per_dubbio = False
+    storico_risposte = []
+    percorso_completo = True
 
     try:
         res = generate_microlearning_path(topic, level)
@@ -32,6 +34,10 @@ def main():
             user_solution = input("Scrivi la tua soluzione:\n").strip()
             
             if user_solution:
+                storico_risposte.append({
+                    'esercizio': modulo.esercizio_pratico,
+                    'soluzione': user_solution,
+                })
                 try:
                     # Valuta la risposta
                     feedback = valuta_risposta(modulo.esercizio_pratico, user_solution)
@@ -90,12 +96,9 @@ def main():
                                 print()
                                 
                                 # Traccia l'argomento per il recupero
-                                argomenti_da_recuperare.append({
-                                    'modulo': modulo.id,
-                                    'titolo': modulo.titolo_modulo,
-                                    'difficolta': level,
-                                    'note': dubbio_utente
-                                })
+                                argomenti_da_recuperare.append(
+                                    f"Modulo {modulo.id} ({modulo.titolo_modulo}): {dubbio_utente}"
+                                )
                                 
                                 continua = input("\nHai capito meglio ora? (sì/no): ").strip().lower()
                                 if continua in ['sì', 'si', 's', 'y', 'yes']:
@@ -104,6 +107,7 @@ def main():
                                 else:
                                     print("Ok, archiviamo questo argomento per il recupero successivo e interrompiamo il percorso.\n")
                                     stop_percorso = True
+                                    percorso_completo = False
                                     interruzione_per_dubbio = True
                                     break
                             except Exception as e:
@@ -121,31 +125,42 @@ def main():
             else:
                 print("Soluzione vuota. Passaggio al modulo successivo...\n")
         
-        # Riepilogo finale e argomenti da recuperare
-        print("\n" + "=" * 50)
-        print("RIEPILOGO FINALE")
-        print("=" * 50)
-        print(f"Livello di partenza: {level}")
-        print("\nPunti di forza:")
-        if punti_di_forza:
-            for forza in punti_di_forza:
-                print(f"  - {forza}")
-        else:
-            print("  - Nessun feedback disponibile per evidenziare i punti di forza.")
+        if percorso_completo and storico_risposte:
+            try:
+                riepilogo_finale = genera_riepilogo_finale(
+                    storico_risposte,
+                    argomenti_da_recuperare,
+                    level,
+                )
 
-        print("\nDiario di bordo (Note):")
-        if argomenti_da_recuperare:
-            for arg in argomenti_da_recuperare:
-                print(f"  - Modulo {arg['modulo']} ({arg['titolo']}): {arg['note']}")
-        else:
-            print("  - Nessuna difficoltà specifica registrata.")
-            print("  - Hai mostrato un approccio attento e pronto a imparare: continua così!")
+                print("\n" + "=" * 50)
+                print("RIEPILOGO FINALE")
+                print("=" * 50)
+                print(f"Livello di partenza: {level}")
 
-        try:
-            saluto_finale = genera_saluto_finale(nome, level, interruzione_per_dubbio)
-            print("\n" + saluto_finale)
-        except Exception as e:
-            print(f"\nErrore nella generazione del saluto finale: {e}")
+                print("\nPunti di forza:")
+                if riepilogo_finale.punti_di_forza:
+                    for forza in riepilogo_finale.punti_di_forza:
+                        print(f"  - {forza}")
+                else:
+                    print("  - Nessun punto di forza disponibile.")
+
+                print("\nPunti da migliorare:")
+                if riepilogo_finale.punti_da_migliorare:
+                    for miglioramento in riepilogo_finale.punti_da_migliorare:
+                        print(f"  - {miglioramento}")
+                else:
+                    print("  - Nessun punto da migliorare disponibile.")
+
+                print("\nDiario di bordo:")
+                print(riepilogo_finale.diario_di_bordo or "  - Nessuna nota disponibile.")
+
+                print("\nSaluto conclusivo:")
+                print(riepilogo_finale.saluto_conclusivo or "  - Nessun saluto disponibile.")
+            except Exception as e:
+                print(f"Errore nella generazione del riepilogo finale: {e}")
+        else:
+            print("\nIl riepilogo finale non è stato generato perché il percorso non è stato completato o non ci sono risposte sufficienti.")
 
     except Exception as e:
         print(f"Errore durante la generazione: {e}")

@@ -94,7 +94,7 @@
         <div id="summaryCard" class="card hidden">
             <h2>Riepilogo sessione</h2>
             <div id="summaryContent"></div>
-            <button style="margin-top: 16px;" onclick="generateSalute()">Genera saluto finale</button>
+            <button id="generateSummaryButton" style="margin-top: 16px;" onclick="generateFinalSummary()">Genera riepilogo finale</button>
             <div id="salutoText" class="final-salute" style="margin-top: 18px; font-size: 1rem; line-height: 1.7;"></div>
         </div>
     </div>
@@ -105,6 +105,8 @@
         let puntiForza = [];
         let diarioNote = [];
         let interruzioneDubbio = false;
+        let moduleSolutions = {};
+        let finalSummary = null;
 
         function setMessage(text) {
             const msg = document.getElementById('message');
@@ -140,6 +142,8 @@
                 puntiForza = [];
                 diarioNote = [];
                 interruzioneDubbio = false;
+                moduleSolutions = {};
+                finalSummary = null;
                 renderPath();
             } catch (err) {
                 setMessage('Errore di connessione. Riprova.');
@@ -270,6 +274,10 @@
                 }
 
                 puntiForza.push(data.commento_costruttivo);
+                moduleSolutions[moduleId] = {
+                    esercizio: modulo.esercizio_pratico,
+                    soluzione,
+                };
                 feedbackDiv.innerHTML = `
                     <div class="badge">Feedback ricevuto</div>
                     <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
@@ -339,44 +347,103 @@
         function updateSummary() {
             const summary = document.getElementById('summaryContent');
             const level = document.getElementById('level').value || 'N/D';
+            const summaryButton = document.getElementById('generateSummaryButton');
+            const isLastModule = currentResponse && currentModuleIndex === currentResponse.percorso_studio.moduli.length - 1;
+
+            if (summaryButton) {
+                summaryButton.style.display = isLastModule ? 'block' : 'none';
+            }
+
+            if (finalSummary) {
+                summary.innerHTML = `
+                    <div class="summary-item">
+                        <h3>Livello di partenza</h3>
+                        <p>${level}</p>
+                    </div>
+                    <div class="summary-item">
+                        <h3>Punti di forza</h3>
+                        <ul>${finalSummary.punti_di_forza.length ? finalSummary.punti_di_forza.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto di forza disponibile.</li>'}</ul>
+                    </div>
+                    <div class="summary-item">
+                        <h3>Punti da migliorare</h3>
+                        <ul>${finalSummary.punti_da_migliorare.length ? finalSummary.punti_da_migliorare.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto da migliorare disponibile.</li>'}</ul>
+                    </div>
+                    <div class="summary-item">
+                        <h3>Diario di bordo</h3>
+                        <p>${finalSummary.diario_di_bordo || 'Nessuna nota disponibile.'}</p>
+                    </div>
+                    <div class="summary-item">
+                        <h3>Saluto conclusivo</h3>
+                        <p>${finalSummary.saluto_conclusivo || 'Nessun saluto conclusivo disponibile.'}</p>
+                    </div>
+                `;
+                document.getElementById('salutoText').textContent = '';
+                return;
+            }
+
+            const riepilogo = {};
+            const puntiForzaList = puntiForza;
+            const puntiDaMigliorareList = [];
+            const diarioText = diarioNote.length ? diarioNote.join('; ') : 'Nessuna difficoltà specifica registrata.';
+
             summary.innerHTML = `
                 <div class="summary-item">
                     <h3>Livello di partenza</h3>
                     <p>${level}</p>
                 </div>
                 <div class="summary-item">
-                    <h3>Punti di forza</h3>
-                    <ul>${puntiForza.length ? puntiForza.map(p => `<li>${p}</li>`).join('') : '<li>Nessun feedback ancora registrato.</li>'}</ul>
+                    <h3>Commento costruttivo</h3>
+                    <p>${puntiForza.length ? puntiForza[0] : 'Nessun commento disponibile.'}</p>
                 </div>
                 <div class="summary-item">
-                    <h3>Diario di bordo (Note)</h3>
-                    <ul>${diarioNote.length ? diarioNote.map(n => `<li>${n}</li>`).join('') : '<li>Nessuna difficoltà specifica registrata.</li>'}</ul>
+                    <h3>Punti di forza</h3>
+                    <ul>${puntiForzaList.length ? puntiForzaList.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto di forza disponibile.</li>'}</ul>
+                </div>
+                <div class="summary-item">
+                    <h3>Punti da migliorare</h3>
+                    <ul>${puntiDaMigliorareList.length ? puntiDaMigliorareList.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto da migliorare disponibile.</li>'}</ul>
+                </div>
+                <div class="summary-item">
+                    <h3>Diario di bordo</h3>
+                    <p>${diarioText}</p>
+                </div>
+                <div class="summary-item">
+                    <h3>Saluto conclusivo</h3>
+                    <p>Genera il riepilogo finale al termine del terzo modulo per vedere il saluto conclusivo.</p>
                 </div>
             `;
+            document.getElementById('salutoText').textContent = '';
         }
 
-        async function generateSalute() {
+        async function generateFinalSummary() {
             setMessage('');
-            const name = document.getElementById('name').value.trim() || 'Studente';
             const level = document.getElementById('level').value;
+            const solutions = Object.values(moduleSolutions);
+
+            if (solutions.length === 0) {
+                setMessage('Inserisci almeno una soluzione ai moduli prima di generare il riepilogo finale.');
+                return;
+            }
 
             try {
-                const res = await fetch('/api/saluto', {
+                const res = await fetch('/api/final-summary', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ nome: name, livello: level, interruzione: interruzioneDubbio }),
+                    body: JSON.stringify({ solutions, diary: diarioNote, livello: level }),
                 });
                 const data = await res.json();
                 const salutoDiv = document.getElementById('salutoText');
 
                 if (!data.success) {
-                    setMessage(data.error || 'Errore nella generazione del saluto finale.');
+                    setMessage(data.error || 'Errore nella generazione del riepilogo finale.');
                     return;
                 }
 
-                salutoDiv.textContent = data.saluto;
+                finalSummary = data.data;
+                salutoDiv.textContent = '';
+                updateSummary();
             } catch (err) {
-                setMessage('Errore di connessione durante la generazione del saluto finale.');
+                setMessage('Errore di connessione durante la generazione del riepilogo finale.');
             }
         }
     </script>
