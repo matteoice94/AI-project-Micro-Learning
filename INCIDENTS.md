@@ -54,6 +54,18 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 - **Lezione appresa:** Quando si cambia un flusso architetturale, è necessario aggiornare in parallelo modello dati, logica backend e UI in tutte le interfacce.
 
 ---
-*Esempio di inserimento futuro:*
-- **Errore:** L'AI non rispetta il limite delle 150 parole.
-- **Soluzione:** Modificato il System Prompt aggiungendo un vincolo più stringente.
+
+## [24 Giugno 2026] - Recovery flow, RAG, storico persistente
+- **Errore:** OpenRouter HTTP 404 — endpoint errato (`/v1/chat/completions` invece di `/api/v1/chat/completions`).
+  - **Soluzione:** Corretto URL in `src/generator.py:17`.
+
+- **Errore:** `valuta_risposta()` e `genera_spiegazione_alternativa()` chiamavano `json.loads()` direttamente senza normalizzare il testo, causando "impossibile processare la risposta JSON" quando l'LLM restituiva blocchi ```json.
+  - **Soluzione:** Applicata `_normalize_json_text()` in tutte le funzioni di parsing (`generator.py:158,208,285,339`).
+
+- **Errore:** `KeyError: 'spiegazione'` su moduli archiviati con struttura vecchia.
+  - **Soluzione:** Migrazione automatica e `.get()` con fallback in `streamlit_app.py`.
+
+- **Feature:** Sistema di hint e recovery flow su due tentativi con archiviazione modulo.
+- **Feature:** Database SQLite persistente (`src/database.py`) con embedding via OpenRouter e RAG retrieval.
+- **Feature:** Storico sessioni navigabile con moduli cliccabili e riesumibili.
+- **Lezione appresa:** La normalizzazione JSON va applicata in tutti i punti di parsing, non solo in alcuni. Le modifiche ai campi dei dati salvati richiedono migrazioni retrocompatibili.

@@ -53,3 +53,36 @@ Registro delle modifiche e dei test effettuati sui prompt.
 
 ---
 *Aggiungi qui le prossime modifiche quando testerai i prompt su VS Code.*
+
+## [24 Giugno 2026] - Recovery flow, RAG memory e storico persistente
+- **Azione:** Corretto endpoint OpenRouter da `/v1/chat/completions` a `/api/v1/chat/completions`.
+  - **Obiettivo:** Risolvere HTTP 404.
+  - **Risultato:** API funzionante.
+
+- **Azione:** Applicata `_normalize_json_text()` in tutte le funzioni (`valuta_risposta`, `genera_spiegazione_alternativa`, `genera_riepilogo_finale`, `generate_microlearning_path`).
+  - **Obiettivo:** Gestire risposte LLM con blocchi ```json markdown.
+  - **Risultato:** Parsing JSON robusto in tutta la codebase.
+
+- **Azione:** Aggiornato prompt di `valuta_risposta` per differenziare `commento_costruttivo` (caloroso/entusiasta) da `suggerimento_miglioramento` (concreto/orientato al futuro) e aggiunto campo `esito` ("corretta"/"parziale"/"sbagliata").
+  - **Obiettivo:** Feedback più espressivo e distinguibile tra i due campi.
+  - **Risultato:** Commento motivante e suggerimento pratico con stili diversi.
+
+- **Azione:** Creata funzione `genera_hint()` con fallback testuale, attivata al primo errore.
+  - **Obiettivo:** Guidare l'utente senza dare la risposta.
+  - **Risultato:** Hint LLM (max 60 parole) o fallback generico.
+
+- **Azione:** Implementato recovery flow (1° errore → hint, 2° errore diverso → archivia modulo per futura sessione).
+  - **Obiettivo:** Evitare stress da ripetuti insuccessi.
+  - **Risultato:** Modulo archiviato con dati completi, riprendibile dalla sidebar.
+
+- **Azione:** Aggiunto campo `esito` al modello `FeedbackValutazione`.
+  - **Obiettivo:** Discriminare automaticamente risposte corrette/parziali/sbagliate.
+  - **Risultato:** Logica di recovery basata su flag esplicito.
+
+- **Azione:** Creato `src/database.py` con SQLite persistente, embedding via OpenRouter (`text-embedding-3-small`) e RAG retrieval (`find_similar_modules`).
+  - **Obiettivo:** Memoria a lungo termine tra sessioni e arricchimento contestuale dei prompt.
+  - **Risultato:** I nuovi percorsi ricevono come contesto i moduli semanticamente simili del passato.
+
+- **Azione:** Aggiunta sezione "Storico" nella sidebar e vista moduli passati cliccabili/riesumibili.
+  - **Obiettivo:** Navigare sessioni precedenti e riprovare moduli.
+  - **Risultato:** Storico persistente con tentativi, stato e riapertura moduli.

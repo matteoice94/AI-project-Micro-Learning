@@ -1,0 +1,239 @@
+import os
+import json
+import math
+import sqlite3
+import urllib.request
+import urllib.error
+from pathlib import Path
+from datetime import datetime
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(dotenv_path=PROJECT_ROOT / '.env')
+DB_DIR = PROJECT_ROOT / 'data'
+DB_PATH = DB_DIR / 'mlpg_history.db'
+
+OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings"
+EMBED_MODEL = "openai/text-embedding-3-small"
+
+
+def _get_api_key():
+    key = os.getenv("OPENROUTER_API_KEY")
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY non trovata per embeddings.")
+    return key
+
+
+def _get_conn():
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def init_db():
+    conn = _get_conn()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic TEXT NOT NULL,
+            level TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            riepilogo TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            module_index INTEGER NOT NULL,
+            titolo TEXT NOT NULL,
+            spiegazione TEXT NOT NULL,
+            esercizio TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            archived INTEGER DEFAULT 0,
+            embedding TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            module_id INTEGER NOT NULL,
+            soluzione TEXT,
+            esito TEXT,
+            feedback_json TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (module_id) REFERENCES modules(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
+        CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
+    """)
+    conn.commit()
+    conn.close()
+
+
+# ── embedding ──────────────────────────────────────────────
+
+def compute_embedding(text: str) -> list[float]:
+    api_key = _get_api_key()
+    payload = {"model": EMBED_MODEL, "input": text}
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        OPENROUTER_EMBED_URL,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "MLPG-History/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Embedding HTTP {exc.code}: {body_text}") from exc
+
+    try:
+        return body["data"][0]["embedding"]
+    except (KeyError, IndexError):
+        raise RuntimeError("Risposta embedding non valida.")
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+# ── salvataggio ────────────────────────────────────────────
+
+def save_session(topic: str, level: str, modules_data: list[dict]) -> int:
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    cur = conn.execute(
+        "INSERT INTO sessions (topic, level, created_at) VALUES (?, ?, ?)",
+        (topic, level, now),
+    )
+    session_id = cur.lastrowid
+
+    for i, mod in enumerate(modules_data):
+        testo_embed = f"{mod.get('titolo_modulo', mod.get('titolo', ''))} {mod.get('spiegazione', '')}"
+        titolo = mod.get("titolo_modulo") or mod.get("titolo", "")
+        spiegazione = mod.get("spiegazione", "")
+        esercizio = mod.get("esercizio_pratico") or mod.get("esercizio", "")
+        try:
+            emb = compute_embedding(testo_embed)
+            emb_json = json.dumps(emb)
+        except Exception:
+            emb_json = None
+
+        conn.execute(
+            "INSERT INTO modules (session_id, module_index, titolo, spiegazione, esercizio, embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, i, titolo, spiegazione, esercizio, emb_json),
+        )
+
+    conn.commit()
+    conn.close()
+    return session_id
+
+
+def save_attempt(module_db_id: int, soluzione: str, esito: str, feedback_json: str):
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.execute(
+        "INSERT INTO attempts (module_id, soluzione, esito, feedback_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        (module_db_id, soluzione, esito, feedback_json, now),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_module_state(module_db_id: int, completed: bool = False, archived: bool = False):
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE modules SET completed = ?, archived = ? WHERE id = ?",
+        (1 if completed else 0, 1 if archived else 0, module_db_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_riepilogo(session_id: int, riepilogo_text: str):
+    conn = _get_conn()
+    conn.execute("UPDATE sessions SET riepilogo = ? WHERE id = ?", (riepilogo_text, session_id))
+    conn.commit()
+    conn.close()
+
+
+# ── lettura storico ────────────────────────────────────────
+
+def get_all_sessions() -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, topic, level, created_at, riepilogo FROM sessions ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_session_modules(session_id: int) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, module_index, titolo, spiegazione, esercizio, completed, archived "
+        "FROM modules WHERE session_id = ? ORDER BY module_index",
+        (session_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_module_attempts(module_db_id: int) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT soluzione, esito, feedback_json, created_at FROM attempts WHERE module_id = ? ORDER BY created_at",
+        (module_db_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── RAG retrieval ──────────────────────────────────────────
+
+def find_similar_modules(query: str, top_k: int = 5) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT m.id, m.titolo, m.spiegazione, m.esercizio, s.topic, s.level "
+        "FROM modules m JOIN sessions s ON m.session_id = s.id "
+        "WHERE m.embedding IS NOT NULL "
+        "ORDER BY s.created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return []
+
+    try:
+        q_emb = compute_embedding(query)
+    except Exception:
+        return []
+
+    scored = []
+    for r in rows:
+        try:
+            m_emb = json.loads(r["embedding"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        sim = _cosine_similarity(q_emb, m_emb)
+        scored.append((sim, dict(r)))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item for _, item in scored[:top_k] if _ > 0.3]

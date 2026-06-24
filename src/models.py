@@ -17,6 +17,7 @@ class FeedbackValutazione(BaseModel):
     punti_di_forza: Optional[List[str]] = None
     punti_migliorabili: Optional[List[str]] = None
     errors_comprensione: Optional[List[str]] = None
+    esito: Optional[str] = None  # "corretta", "parziale", "sbagliata"
 
 class RiepilogoFinale(BaseModel):
     punti_di_forza: List[str]

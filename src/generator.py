@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 import json
 import time
-import google.generativeai as genai
+import urllib.request
+import urllib.error
 from dotenv import load_dotenv
 from pydantic import ValidationError
 from .models import TutorResponse, FeedbackValutazione, RiepilogoFinale
@@ -13,25 +14,73 @@ SYSTEM_PROMPT_PATH = PROJECT_ROOT / 'Prompts' / 'system_mlpg.md'
 if not SYSTEM_PROMPT_PATH.exists():
     SYSTEM_PROMPT_PATH = PROJECT_ROOT / 'prompts' / 'system_mlpg.md'
 
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODEL = "gpt-4o-mini"
 
-def _get_configured_model():
-    """Configura e ritorna un modello Gemini configurato."""
-    api_key = os.getenv("GEMINI_API_KEY")
+
+def _get_openrouter_api_key():
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY non trovata. Assicurati che sia definita nel file .env.")
-    genai.configure(api_key=api_key)
-    system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding='utf-8')
-    return genai.GenerativeModel(
-        'models/gemini-2.5-flash',
-        system_instruction=system_prompt,
+        raise RuntimeError("OPENROUTER_API_KEY non trovata. Assicurati che sia definita nel file .env.")
+    return api_key
+
+
+def _openrouter_chat_completion(messages, temperature: float = 0.2):
+    api_key = _get_openrouter_api_key()
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    request_data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        OPENROUTER_API_URL,
+        data=request_data,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "OpenRouterStreamlit/1.0",
+        },
+        method="POST",
     )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"OpenRouter HTTP {exc.code}: {exc.reason}. Risposta: {body}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Errore di rete OpenRouter: {exc.reason}") from exc
+
+
+def _get_chat_response_text(messages, temperature: float = 0.2):
+    response = _call_with_retries(lambda: _openrouter_chat_completion(messages, temperature))
+    choices = response.get("choices")
+    if not choices or not isinstance(choices, list):
+        raise RuntimeError("OpenRouter response non valida: nessuna scelta trovata.")
+
+    first_choice = choices[0]
+    content = None
+    if isinstance(first_choice, dict):
+        message = first_choice.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+        elif "text" in first_choice:
+            content = first_choice.get("text")
+    if not isinstance(content, str):
+        raise RuntimeError("OpenRouter response non valida: contenuto testo mancante.")
+
+    return content.strip()
 
 
 def _call_with_retries(callable_fn, max_retries: int = 3, wait_seconds: int = 30):
-    """Esegue la callable che chiama l'API Gemini con retry su errori di rate limit (429/ResourceExhausted).
+    """Esegue la callable che chiama l'API OpenRouter con retry su errori di rate limit.
 
-    La callable deve essere una funzione senza argomenti che esegue la chiamata a `model.generate_content(...)`
-    e ritorna l'oggetto risposta.
+    La callable deve essere una funzione senza argomenti che effettua la richiesta HTTP e ritorna la risposta JSON.
     """
     attempt = 0
     while True:
@@ -90,28 +139,32 @@ def _normalize_json_text(response_text: str) -> str:
     return ''.join(normalized_chars)
 
 
-def generate_microlearning_path(topic: str, level: str) -> TutorResponse:
-    model = _get_configured_model()
-    
+def generate_microlearning_path(topic: str, level: str, context_modules: list | None = None) -> TutorResponse:
     user_prompt = (
         f"Argomento: {topic}\n"
         f"Livello: {level}\n"
         "Rispondi esclusivamente con un JSON valido che corrisponda esattamente alla struttura richiesta dal system prompt. "
         "Non aggiungere testo libero o commenti."
     )
-    
-    response = _call_with_retries(lambda: model.generate_content(
-        user_prompt,
-        generation_config={"response_mime_type": "application/json"}
-    ))
 
-    response_text = _normalize_json_text(response.text)
+    if context_modules:
+        contesto = "\n\nEsempi di moduli su argomenti simili già creati in passato (usali come ispirazione per struttura e profondità, non copiarli):\n"
+        for i, cm in enumerate(context_modules[:3], 1):
+            contesto += f"{i}. [{cm['topic']}] {cm['titolo']}: {cm['spiegazione'][:200]}\n"
+        user_prompt += contesto
+    
+    system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding='utf-8')
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    response_text = _get_chat_response_text(messages)
 
     try:
-        return TutorResponse.model_validate_json(response_text)
+        return TutorResponse.model_validate_json(_normalize_json_text(response_text))
     except (ValidationError, ValueError) as exc:
         raise RuntimeError(
-            "Risposta Gemini non valida: il JSON generato non corrisponde al formato TutorResponse. "
+            "Risposta non valida: il JSON generato non corrisponde al formato TutorResponse. "
             f"Contenuto ricevuto: {response_text[:500]}"
         ) from exc
 
@@ -127,7 +180,6 @@ def valuta_risposta(esercizio: str, risposta_utente: str) -> FeedbackValutazione
     Returns:
         FeedbackValutazione con commento_costruttivo e suggerimento_miglioramento
     """
-    model = _get_configured_model()
 
     evaluation_prompt = f"""Sei un valutatore esperto di microlearning. Valuta la seguente risposta dell'utente.
 
@@ -137,40 +189,92 @@ RISPOSTA DELL'UTENTE: {risposta_utente}
 
 Devi restituire ESCLUSIVAMENTE un JSON valido con questi campi:
 {{
-  "commento_costruttivo": "Commento motivante e incoraggiante.",
+  "commento_costruttivo": "Commento caloroso, motivante e personale. Usa un tono entusiasta, fai sentire l'utente capace e riconosci lo sforzo. 2-3 frasi.",
   "punti_di_forza": ["Max 3 punti analitici estratti dalla risposta; non copiare il commento_costruttivo."],
   "punti_migliorabili": ["Elementi da correggere o approfondire, con breve motivo."],
-  "suggerimento_miglioramento": "Suggerimento pratico e specifico."
+  "suggerimento_miglioramento": "Suggerimento pratico, specifico e orientato al futuro. Un consiglio concreto su cosa fare dopo per migliorare. 1-2 frasi.",
+  "esito": "corretta | parziale | sbagliata"
 }}
 
 REGOLE:
-- Se la risposta dell'utente è sostanzialmente corretta, fornisci almeno 2 voci in `punti_di_forza` e almeno 2 voci in `punti_migliorabili`.
+- `commento_costruttivo` e `suggerimento_miglioramento` devono essere DIVERSI tra loro per stile e contenuto: il primo elogia e motiva, il secondo indica un passo successivo concreto.
+- Se la risposta dell'utente è sostanzialmente corretta, imposta `esito` a "corretta" e fornisci almeno 2 voci in `punti_di_forza` e 1-2 in `punti_migliorabili`.
+- Se la risposta è parzialmente corretta o manca di dettagli, imposta `esito` a "parziale".
+- Se la risposta è "non lo so", completamente sbagliata o molto imprecisa, imposta `esito` a "sbagliata", lascia `punti_di_forza` vuoto e concentra il feedback su `punti_migliorabili`.
 - `punti_di_forza` deve essere analitico, sintetico e non ripetere il `commento_costruttivo`.
-- Se la risposta è "non lo so", completamente sbagliata o molto imprecisa, lascia `punti_di_forza` vuoto e concentra il feedback su `punti_migliorabili`.
 - Non aggiungere il `commento_costruttivo` all'interno di `punti_di_forza`.
 - Rispondi SOLO con il JSON richiesto.
 """
     
-    response = _call_with_retries(lambda: model.generate_content(
-        evaluation_prompt,
-        generation_config={"response_mime_type": "application/json"}
-    ))
+    messages = [
+        {"role": "system", "content": "Sei un valutatore esperto di microlearning."},
+        {"role": "user", "content": evaluation_prompt},
+    ]
+    response_text = _get_chat_response_text(messages)
     
     try:
-        response_text = _normalize_json_text(response.text)
-        result = json.loads(response_text)
+        result = json.loads(_normalize_json_text(response_text))
         feedback = FeedbackValutazione(
             commento_costruttivo=result.get('commento_costruttivo', ''),
             suggerimento_miglioramento=result.get('suggerimento_miglioramento', ''),
             punti_di_forza=result.get('punti_di_forza', []) if isinstance(result.get('punti_di_forza', []), list) else [],
-            punti_migliorabili=result.get('punti_migliorabili', []) if isinstance(result.get('punti_migliorabili', []), list) else []
+            punti_migliorabili=result.get('punti_migliorabili', []) if isinstance(result.get('punti_migliorabili', []), list) else [],
+            esito=result.get('esito', '')
         )
         return feedback
     except (json.JSONDecodeError, ValueError, ValidationError) as exc:
         raise RuntimeError(
             f"Errore nella valutazione: impossibile processare la risposta JSON. "
-            f"Contenuto ricevuto: {response.text[:500]}"
+            f"Contenuto ricevuto: {response_text[:500]}"
         ) from exc
+
+
+def genera_hint(esercizio: str, risposta_utente: str, livello: str, tentativo: int = 1) -> str:
+    """
+    Genera un hint per aiutare l'utente a correggere la propria risposta.
+
+    Args:
+        esercizio: Testo dell'esercizio
+        risposta_utente: Risposta errata fornita dall'utente
+        livello: Livello di difficoltà
+        tentativo: Numero del tentativo (1 = primo errore)
+
+    Returns:
+        Testo dell'hint
+    """
+    hint_prompt = f"""L'utente ha sbagliato questo esercizio (livello {livello}, tentativo {tentativo}).
+
+ESERCIZIO: {esercizio}
+
+RISPOSTA DELL'UTENTE: {risposta_utente}
+
+Genera un hint breve (max 60 parole) in italiano che:
+- Non dia la risposta direttamente
+- Faccia riflettere l'utente su cosa ha sbagliato
+- Suggerisca una direzione o un concetto chiave da rivedere
+- Abbia un tono incoraggiante
+
+Rispondi SOLO con il testo dell'hint, senza formattazione JSON.
+"""
+
+    messages = [
+        {"role": "system", "content": "Sei un tutor che guida l'utente a scoprire la risposta da solo."},
+        {"role": "user", "content": hint_prompt},
+    ]
+
+    fallback_hints = {
+        1: "Riprova! Rileggi attentamente la spiegazione del modulo e concentrati sui concetti chiave. Se serve, chiedi un chiarimento qui sotto.",
+        2: "Non preoccuparti, succede! Prova a scomporre il problema in passaggi più piccoli. Usa la sezione 'Chiedi chiarimenti mirati' se un concetto non ti è chiaro.",
+    }
+
+    try:
+        hint = _get_chat_response_text(messages, temperature=0.4)
+        if hint and len(hint) > 5:
+            return hint
+    except Exception:
+        pass
+
+    return fallback_hints.get(tentativo, fallback_hints[1])
 
 
 def genera_riepilogo_finale(storico_risposte: list[dict], diario_note: list[str], livello: str) -> RiepilogoFinale:
@@ -185,7 +289,6 @@ def genera_riepilogo_finale(storico_risposte: list[dict], diario_note: list[str]
     Returns:
         RiepilogoFinale con punti di forza, punti da migliorare, diario di bordo e saluto conclusivo.
     """
-    model = _get_configured_model()
 
     if not storico_risposte:
         raise ValueError("Lo storico delle risposte è vuoto. Impossibile generare il riepilogo finale.")
@@ -229,14 +332,14 @@ REGOLE:
 - Rispondi SOLO con il JSON richiesto, senza testo aggiuntivo.
 """
 
-    response = _call_with_retries(lambda: model.generate_content(
-        summary_prompt,
-        generation_config={"response_mime_type": "application/json"}
-    ))
-    response_text = _normalize_json_text(response.text)
+    messages = [
+        {"role": "system", "content": "Sei un assistente che genera riepiloghi finali in italiano."},
+        {"role": "user", "content": summary_prompt},
+    ]
+    response_text = _get_chat_response_text(messages)
 
     try:
-        return RiepilogoFinale.model_validate_json(response_text)
+        return RiepilogoFinale.model_validate_json(_normalize_json_text(response_text))
     except (ValidationError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(
             "Errore nella generazione del riepilogo finale: risposta JSON non valida. "
@@ -257,7 +360,6 @@ def genera_spiegazione_alternativa(argomento: str, spiegazione_originale: str, d
     Returns:
         dict con spiegazione semplificata, esempio pratico e passaggi consigliati
     """
-    model = _get_configured_model()
     
     alt_prompt = f"""L'utente non ha capito questo argomento a livello {livello}.
 
@@ -284,15 +386,14 @@ La spiegazione deve essere:
 - non più lunga di 130 parole per la spiegazione
 """
     
-    response = _call_with_retries(lambda: model.generate_content(
-        alt_prompt,
-        generation_config={"response_mime_type": "application/json"}
-    ))
-    
-    response_text = _normalize_json_text(response.text)
+    messages = [
+        {"role": "system", "content": "Sei un tutor che spiega concetti in modo semplice e chiaro."},
+        {"role": "user", "content": alt_prompt},
+    ]
+    response_text = _get_chat_response_text(messages)
 
     try:
-        result = json.loads(response_text)
+        result = json.loads(_normalize_json_text(response_text))
         return {
             'spiegazione_semplificata': result.get('spiegazione_semplificata', '').strip(),
             'esempio_pratico': result.get('esempio_pratico', '').strip(),
@@ -300,47 +401,29 @@ La spiegazione deve essere:
         }
     except (json.JSONDecodeError, ValueError) as exc:
         raise RuntimeError(
-            f"Errore nella generazione della spiegazione semplificata: risposta non valida. \nContenuto ricevuto: {response.text[:500]}"
+            f"Errore nella generazione della spiegazione semplificata: risposta non valida. \nContenuto ricevuto: {response_text[:500]}"
         ) from exc
 
 
-def _get_saluto_model():
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY non trovata. Assicurati che sia definita nel file .env.")
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(
-        'models/gemini-2.5-flash',
-        system_instruction=(
-            "Sei un tutor empatico e incoraggiante. "
-            "Genera un breve saluto finale personalizzato in italiano. "
-            "Usa un tono rassicurante, motivante e umano. "
-            "Non rispondere in formato JSON."
-        ),
-    )
-
-
 def genera_saluto_finale(nome_utente: str, livello: str, interruzione_per_dubbio: bool) -> str:
-    model = _get_saluto_model()
     if interruzione_per_dubbio:
-        prompt = f"""Hai appena aiutato {nome_utente}, livello {livello}, che ha bisogno di una chiusura rassicurante. """
+        prompt = f"Hai appena aiutato {nome_utente}, livello {livello}, che ha bisogno di una chiusura rassicurante. "
         prompt += (
             "Genera un breve saluto finale in italiano che spieghi che è normale avere dubbi durante l'apprendimento "
             "e che riprenderete insieme i concetti quando tornerete a studiare. "
             "Sii caloroso, umano e motivante."
         )
     else:
-        prompt = f"""Hai appena concluso una sessione con {nome_utente}, livello {livello}. """
+        prompt = f"Hai appena concluso una sessione con {nome_utente}, livello {livello}. "
         prompt += (
             "Genera un breve saluto finale in italiano che lodi il progresso fatto oggi, sottolinei l'impegno e motivi a tornare. "
             "Sii positivo, personale e incoraggiante."
         )
 
-    response = _call_with_retries(lambda: model.generate_content(
-        prompt,
-        generation_config={"response_mime_type": "text/plain"}
-    ))
-
-    return response.text.strip()
+    messages = [
+        {"role": "system", "content": "Sei un tutor empatico e incoraggiante. Genera un messaggio di chiusura in italiano senza formato JSON."},
+        {"role": "user", "content": prompt},
+    ]
+    return _get_chat_response_text(messages)
 
 
