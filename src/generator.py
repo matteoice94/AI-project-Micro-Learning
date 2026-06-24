@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 import json
 import time
@@ -6,16 +7,24 @@ import urllib.request
 import urllib.error
 from dotenv import load_dotenv
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 from .models import TutorResponse, FeedbackValutazione, RiepilogoFinale
+from .config import (
+    OPENROUTER_API_URL,
+    OPENROUTER_MODEL,
+    CHAT_TIMEOUT,
+    CHAT_TEMPERATURE_DEFAULT,
+    CHAT_TEMPERATURE_HINT,
+    MAX_RETRIES,
+    WAIT_SECONDS,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(dotenv_path=PROJECT_ROOT / '.env')
 SYSTEM_PROMPT_PATH = PROJECT_ROOT / 'Prompts' / 'system_mlpg.md'
 if not SYSTEM_PROMPT_PATH.exists():
     SYSTEM_PROMPT_PATH = PROJECT_ROOT / 'prompts' / 'system_mlpg.md'
-
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "gpt-4o-mini"
 
 
 def _get_openrouter_api_key():
@@ -45,11 +54,16 @@ def _openrouter_chat_completion(messages, temperature: float = 0.2):
         method="POST",
     )
 
+    logger.debug("Chiamata OpenRouter: model=%s, temperature=%s", OPENROUTER_MODEL, temperature)
+
     try:
-        with urllib.request.urlopen(req, timeout=60) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=CHAT_TIMEOUT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            logger.debug("Risposta OpenRouter ricevuta (token totali=%s)", result.get("usage", {}).get("total_tokens", "?"))
+            return result
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        logger.error("OpenRouter HTTP %s: %s", exc.code, exc.reason)
         raise RuntimeError(
             f"OpenRouter HTTP {exc.code}: {exc.reason}. Risposta: {body}"
         ) from exc
@@ -57,7 +71,7 @@ def _openrouter_chat_completion(messages, temperature: float = 0.2):
         raise RuntimeError(f"Errore di rete OpenRouter: {exc.reason}") from exc
 
 
-def _get_chat_response_text(messages, temperature: float = 0.2):
+def _get_chat_response_text(messages, temperature: float = CHAT_TEMPERATURE_DEFAULT):
     response = _call_with_retries(lambda: _openrouter_chat_completion(messages, temperature))
     choices = response.get("choices")
     if not choices or not isinstance(choices, list):
@@ -77,7 +91,7 @@ def _get_chat_response_text(messages, temperature: float = 0.2):
     return content.strip()
 
 
-def _call_with_retries(callable_fn, max_retries: int = 3, wait_seconds: int = 30):
+def _call_with_retries(callable_fn, max_retries: int = MAX_RETRIES, wait_seconds: int = WAIT_SECONDS):
     """Esegue la callable che chiama l'API OpenRouter con retry su errori di rate limit.
 
     La callable deve essere una funzione senza argomenti che effettua la richiesta HTTP e ritorna la risposta JSON.
@@ -90,6 +104,7 @@ def _call_with_retries(callable_fn, max_retries: int = 3, wait_seconds: int = 30
         except Exception as exc:
             msg = str(exc)
             is_rate = False
+            logger.warning("Tentativo %d/%d fallito: %s", attempt, max_retries, msg)
             # riconosci possibili indicatori di quota esaurita
             if '429' in msg or 'ResourceExhausted' in msg or 'rate limit' in msg.lower() or 'quota' in msg.lower():
                 is_rate = True
@@ -268,7 +283,7 @@ Rispondi SOLO con il testo dell'hint, senza formattazione JSON.
     }
 
     try:
-        hint = _get_chat_response_text(messages, temperature=0.4)
+        hint = _get_chat_response_text(messages, temperature=CHAT_TEMPERATURE_HINT)
         if hint and len(hint) > 5:
             return hint
     except Exception:

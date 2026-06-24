@@ -8,8 +8,12 @@ class Metadati(BaseModel):
 class Modulo(BaseModel):
     id: int
     titolo_modulo: str
-    spiegazione: str = Field(..., max_length=1500) # Controllo flessibile per le ~150 parole
+    spiegazione: str = Field(..., max_length=1500)
     esercizio_pratico: str
+
+    model_config = {
+        "extra": "forbid"
+    }
 
 class FeedbackValutazione(BaseModel):
     commento_costruttivo: str
@@ -32,6 +36,10 @@ class RiepilogoFinale(BaseModel):
 class PercorsoStudio(BaseModel):
     metadati: Metadati
     moduli: List[Modulo]
+
+    model_config = {
+        "extra": "forbid"
+    }
 
 class TutorResponse(BaseModel):
     percorso_studio: PercorsoStudio

@@ -1,26 +1,47 @@
-from .generator import generate_microlearning_path, valuta_risposta, genera_spiegazione_alternativa, genera_riepilogo_finale
+from .generator import (
+    generate_microlearning_path,
+    valuta_risposta,
+    genera_spiegazione_alternativa,
+    genera_riepilogo_finale,
+    genera_hint,
+)
+from .database import (
+    init_db,
+    save_session,
+    save_attempt,
+    update_module_state,
+    save_riepilogo,
+    find_similar_modules,
+    get_session_modules,
+)
+from .config import RAG_TOP_K
+
 
 def main():
+    init_db()
+
     print("=== MLPG Tutor: Generazione Percorso Microlearning ===")
     topic = input("Inserisci l'argomento da studiare: ").strip()
     level = input("Inserisci il livello (base, intermedio, avanzato): ").strip()
-    nome = input("Inserisci il tuo nome (opzionale): ").strip() or "Studente"
 
     if not topic or not level:
         print("Errore: argomento e livello sono obbligatori.")
         return
 
-    # Lista per tracciare argomenti con difficoltà per il recupero
-    argomenti_da_recuperare = []
-    punti_di_forza = []
-    interruzione_per_dubbio = False
     storico_risposte = []
-    percorso_completo = True
+    diario_note = []
+    interruzione_per_dubbio = False
+    moduli_archiviati = []
 
     try:
-        res = generate_microlearning_path(topic, level)
-        print("\n--- Risultato Generazione ---")
-        print(f"Obiettivo: {res.percorso_studio.metadati.objective_apprendimento}\n")
+        context = find_similar_modules(topic, top_k=RAG_TOP_K) or None
+        res = generate_microlearning_path(topic, level, context_modules=context)
+
+        sid = save_session(topic, level, [m.model_dump() for m in res.percorso_studio.moduli])
+        db_mods = get_session_modules(sid)
+        db_map = {str(dbm["module_index"] + 1): dbm["id"] for dbm in db_mods}
+
+        print(f"\nObiettivo: {res.percorso_studio.metadati.objective_apprendimento}\n")
 
         for idx, modulo in enumerate(res.percorso_studio.moduli):
             print("=" * 50)
@@ -28,139 +49,98 @@ def main():
             print("=" * 50)
             print(f"Spiegazione:\n{modulo.spiegazione}\n")
             print(f"Esercizio:\n{modulo.esercizio_pratico}\n")
-            
-            # Chiedi la soluzione all'utente
-            print("--- Prova a risolvere l'esercizio ---")
-            user_solution = input("Scrivi la tua soluzione:\n").strip()
-            
-            if user_solution:
-                storico_risposte.append({
-                    'esercizio': modulo.esercizio_pratico,
-                    'soluzione': user_solution,
-                })
+
+            id_modulo = str(modulo.id)
+            db_id = db_map.get(id_modulo)
+            tentativi = 0
+            ultima_risposta = None
+            stop_percorso = False
+
+            while tentativi < 2:
+                user_solution = input("Scrivi la tua soluzione (o premi Invio per saltare): ").strip()
+                if not user_solution:
+                    print("Soluzione vuota. Passaggio al prossimo modulo.\n")
+                    break
+
                 try:
-                    # Valuta la risposta
                     feedback = valuta_risposta(modulo.esercizio_pratico, user_solution)
-                    # Raccogli i punti di forza analitici (se presenti)
-                    if feedback.punti_di_forza:
-                        punti_di_forza.extend(feedback.punti_di_forza)
 
-                    print("\n--- Valutazione del Tutor ---")
-                    print(f"Commento costruttivo:\n{feedback.commento_costruttivo}\n")
-                    # Mostra punti di forza e punti migliorabili separatamente
-                    if feedback.punti_di_forza:
-                        print("Punti di forza:")
-                        for p in feedback.punti_di_forza:
-                            print(f"  - {p}")
-                        print()
-                    else:
-                        print("Punti di forza: nessun punto analitico generato.\n")
+                    if db_id:
+                        save_attempt(db_id, user_solution, feedback.esito or "", feedback.model_dump_json())
 
-                    if feedback.punti_migliorabili:
-                        print("Punti migliorabili:")
-                        for pm in feedback.punti_migliorabili:
-                            print(f"  - {pm}")
-                        print()
-                    else:
-                        print("Punti migliorabili: nessun punto segnalato.\n")
-
-                    print(f"Suggerimento di miglioramento:\n{feedback.suggerimento_miglioramento}\n")
-                    
-                    # Ciclo di comprensione
-                    stop_percorso = False
-                    while True:
-                        comprensione = input("Hai capito bene questo concetto? (sì/no): ").strip().lower()
-                        
-                        if comprensione in ['sì', 'si', 's', 'y', 'yes']:
-                            print("Ottimo! Procediamo al prossimo modulo.\n")
-                            break
-                        elif comprensione in ['no', 'n']:
-                            print("\nNo problem! Genero una spiegazione mirata per il tuo dubbio...\n")
-                            dubbio_utente = input("Quale parte precisa non ti è chiara? Indica un termine, un passaggio o un concetto specifico: ").strip()
-                            try:
-                                spiegazione_alt = genera_spiegazione_alternativa(
-                                    modulo.titolo_modulo,
-                                    modulo.spiegazione,
-                                    dubbio_utente,
-                                    level
-                                )
-                                print("\n--- Spiegazione Semplificata ---")
-                                print(spiegazione_alt.get('spiegazione_semplificata', ''))
-                                if spiegazione_alt.get('esempio_pratico'):
-                                    print("\n--- Esempio pratico ---")
-                                    print(spiegazione_alt.get('esempio_pratico'))
-                                if spiegazione_alt.get('passaggi'):
-                                    print("\n--- Passaggi consigliati ---")
-                                    for passaggio in spiegazione_alt.get('passaggi', []):
-                                        print(f"  - {passaggio}")
-                                print()
-                                
-                                # Traccia l'argomento per il recupero
-                                argomenti_da_recuperare.append(
-                                    f"Modulo {modulo.id} ({modulo.titolo_modulo}): {dubbio_utente}"
-                                )
-                                
-                                continua = input("\nHai capito meglio ora? (sì/no): ").strip().lower()
-                                if continua in ['sì', 'si', 's', 'y', 'yes']:
-                                    print("Perfetto! Procediamo al prossimo modulo.\n")
-                                    break
-                                else:
-                                    print("Ok, archiviamo questo argomento per il recupero successivo e interrompiamo il percorso.\n")
-                                    stop_percorso = True
-                                    percorso_completo = False
-                                    interruzione_per_dubbio = True
-                                    break
-                            except Exception as e:
-                                print(f"Errore nella generazione della spiegazione semplificata: {e}\n")
-                                stop_percorso = True
-                                break
+                    if feedback.esito in ("sbagliata", "parziale"):
+                        if ultima_risposta == user_solution:
+                            print("\nHai inviato la stessa risposta. Rileggi l'hint qui sotto.\n")
                         else:
-                            print("Per favore rispondi con 'sì' o 'no'.")
+                            tentativi += 1
+                            ultima_risposta = user_solution
+
+                        if tentativi >= 2:
+                            moduli_archiviati.append(modulo.titolo_modulo)
+                            diario_note.append(f"Modulo {modulo.id} ({modulo.titolo_modulo}): archiviato dopo {tentativi} tentativi")
+                            if db_id:
+                                update_module_state(db_id, archived=True)
+                            print("\nModulo archiviato per una prossima sessione. Passiamo avanti.\n")
+                            break
+                        else:
+                            hint = genera_hint(modulo.esercizio_pratico, user_solution, level, tentativi)
+                            print(f"\n--- Suggerimento ---\n{hint}\n")
+                            print(f"Commento: {feedback.commento_costruttivo}")
+                            print(f"Miglioramento: {feedback.suggerimento_miglioramento}\n")
+
+                            # comprensione
+                            capito = input("Hai capito meglio ora? (sì/no, default sì): ").strip().lower()
+                            if capito in ('no', 'n'):
+                                dubbio = input("Quale parte non ti è chiara? ").strip()
+                                try:
+                                    chiar = genera_spiegazione_alternativa(modulo.titolo_modulo, modulo.spiegazione, dubbio, level)
+                                    print(f"\nSpiegazione: {chiar.get('spiegazione_semplificata', '')}")
+                                    if chiar.get('esempio_pratico'):
+                                        print(f"Esempio: {chiar.get('esempio_pratico')}")
+                                    diario_note.append(f"Modulo {modulo.id}: {dubbio}")
+                                    interruzione_per_dubbio = True
+                                except Exception as e:
+                                    print(f"Errore chiarimento: {e}")
                             continue
-                    
-                    if stop_percorso:
+                    else:
+                        storico_risposte.append({
+                            'esercizio': modulo.esercizio_pratico,
+                            'soluzione': user_solution,
+                        })
+                        if db_id:
+                            update_module_state(db_id, completed=True)
+                        print(f"\n{feedback.commento_costruttivo}\n")
                         break
+
                 except Exception as e:
                     print(f"Errore nella valutazione: {e}\n")
+                    break
             else:
-                print("Soluzione vuota. Passaggio al modulo successivo...\n")
-        
-        if percorso_completo and storico_risposte:
+                continue
+
+        if storico_risposte or moduli_archiviati:
+            if not storico_risposte:
+                for m in moduli_archiviati:
+                    storico_risposte.append({"esercizio": "", "soluzione": ""})
             try:
-                riepilogo_finale = genera_riepilogo_finale(
-                    storico_risposte,
-                    argomenti_da_recuperare,
-                    level,
-                )
+                riepilogo = genera_riepilogo_finale(storico_risposte, diario_note, level)
+                if sid:
+                    save_riepilogo(sid, riepilogo.model_dump_json())
 
                 print("\n" + "=" * 50)
                 print("RIEPILOGO FINALE")
                 print("=" * 50)
-                print(f"Livello di partenza: {level}")
-
-                print("\nPunti di forza:")
-                if riepilogo_finale.punti_di_forza:
-                    for forza in riepilogo_finale.punti_di_forza:
-                        print(f"  - {forza}")
-                else:
-                    print("  - Nessun punto di forza disponibile.")
-
-                print("\nPunti da migliorare:")
-                if riepilogo_finale.punti_da_migliorare:
-                    for miglioramento in riepilogo_finale.punti_da_migliorare:
-                        print(f"  - {miglioramento}")
-                else:
-                    print("  - Nessun punto da migliorare disponibile.")
-
-                print("\nDiario di bordo:")
-                print(riepilogo_finale.diario_di_bordo or "  - Nessuna nota disponibile.")
-
-                print("\nSaluto conclusivo:")
-                print(riepilogo_finale.saluto_conclusivo or "  - Nessun saluto disponibile.")
+                print(f"Livello: {level}")
+                print(f"\nPunti di forza:")
+                for p in (riepilogo.punti_di_forza or []):
+                    print(f"  - {p}")
+                print(f"\nPunti da migliorare:")
+                for p in (riepilogo.punti_da_migliorare or []):
+                    print(f"  - {p}")
+                print(f"\nDiario di bordo:\n  {riepilogo.diario_di_bordo}")
+                print(f"\nSaluto:\n  {riepilogo.saluto_conclusivo}")
             except Exception as e:
-                print(f"Errore nella generazione del riepilogo finale: {e}")
-        else:
-            print("\nIl riepilogo finale non è stato generato perché il percorso non è stato completato o non ci sono risposte sufficienti.")
+                print(f"Errore riepilogo finale: {e}")
 
     except Exception as e:
         print(f"Errore durante la generazione: {e}")

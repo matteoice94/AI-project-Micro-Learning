@@ -23,6 +23,7 @@ from src.database import (
     get_module_attempts,
     find_similar_modules,
 )
+from src.config import RAG_TOP_K
 
 st.set_page_config(page_title="MLPG Tutor Streamlit", layout="wide")
 
@@ -106,7 +107,7 @@ with st.sidebar:
             else:
                 try:
                     # RAG: recupera moduli simili dal passato
-                    sim = find_similar_modules(topic, top_k=3)
+                    sim = find_similar_modules(topic, top_k=RAG_TOP_K)
                     context = sim if sim else None
 
                     st.session_state.response = generate_microlearning_path(topic, level, context_modules=context)

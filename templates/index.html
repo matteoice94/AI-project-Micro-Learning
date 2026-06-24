@@ -19,8 +19,16 @@
         }
         * { box-sizing: border-box; }
         body { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
-        .container { max-width: 1200px; margin: 20px auto; padding: 16px; }
-        .hero, .card { background: var(--surface); border-radius: 18px; box-shadow: 0 18px 50px rgba(15,23,42,.08); margin-bottom: 20px; padding: 24px; }
+        .layout { display: flex; max-width: 1400px; margin: 20px auto; padding: 16px; gap: 20px; align-items: flex-start; }
+        .sidebar { width: 280px; flex-shrink: 0; position: sticky; top: 20px; }
+        .sidebar-section { background: var(--surface); border-radius: 18px; box-shadow: 0 18px 50px rgba(15,23,42,.08); margin-bottom: 16px; padding: 18px; }
+        .sidebar-section h3 { font-size: .95rem; margin: 0 0 10px 0; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        .sidebar-item { padding: 8px 10px; border-radius: 10px; cursor: pointer; font-size: .9rem; transition: background .15s; margin-bottom: 4px; }
+        .sidebar-item:hover { background: #eef4ff; }
+        .sidebar-item .tag { font-size: .75rem; background: #eef4ff; color: var(--primary); border-radius: 999px; padding: 2px 8px; margin-left: 6px; }
+        .sidebar-item .tag-archived { background: #fef3c7; color: #92400e; }
+        .main { flex: 1; min-width: 0; }
+        .card { background: var(--surface); border-radius: 18px; box-shadow: 0 18px 50px rgba(15,23,42,.08); margin-bottom: 20px; padding: 24px; }
         h1, h2, h3, h4 { margin: 0 0 12px 0; }
         p { line-height: 1.7; margin: 0 0 14px 0; }
         input, select, textarea, button { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 1rem; background: #fff; }
@@ -28,36 +36,63 @@
         textarea { resize: vertical; }
         button { cursor: pointer; background: var(--primary); color: #fff; transition: background .2s ease, transform .15s ease; }
         button:hover { background: var(--primary-dark); transform: translateY(-1px); }
+        button.secondary { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+        button.secondary:hover { background: #f0f6ff; }
+        button.warning { background: #f59e0b; color: #202124; }
+        button.warning:hover { background: #d97706; }
         .grid { display: grid; gap: 20px; }
         .cols-3 { grid-template-columns: 1.5fr 1fr; }
-        .badge { display: inline-flex; align-items: center; justify-content: center; padding: 8px 14px; border-radius: 999px; background: #eef4ff; color: #1b4f9c; font-size: .9rem; margin-top: 8px; }
+        .badge { display: inline-flex; align-items: center; justify-content: center; padding: 8px 14px; border-radius: 999px; background: #eef4ff; color: #1b4f9c; font-size: .85rem; margin-top: 8px; }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-error { background: #fce4ec; color: #b00020; }
         .error { color: var(--danger); font-weight: 600; margin-bottom: 10px; }
         .success { color: var(--success); }
-        .hidden { display: none; }
+        .hidden { display: none !important; }
         .tab-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
-        .tab { padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; transition: all .18s ease; }
+        .tab { padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; transition: all .18s ease; font-size: .9rem; }
         .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .tab.archived { border-color: var(--warning); color: var(--warning); }
+        .tab.completed { border-color: var(--success); color: var(--success); }
         .progress-bar { height: 12px; border-radius: 999px; background: #dfe6ef; overflow: hidden; margin-top: 14px; }
         .progress-fill { height: 100%; width: 0%; background: var(--primary); transition: width .3s ease; }
         .module-card { border: 1px solid #e2e8f0; border-radius: 18px; padding: 20px; background: #fbfcff; }
-        .module-card h3 { margin-top: 0; }
-        .section-title { font-size: 1.1rem; margin-bottom: 8px; }
         .summary-block { display: grid; gap: 12px; }
         .summary-item { background: #f8fafc; border-radius: 14px; padding: 16px; }
-        .spoiler { background: #eef2ff; color: #3730a3; padding: 12px 14px; border-radius: 12px; }
-        ul { padding-left: 20px; }
+        .hint-box { background: #fff8e1; border: 1px solid #ffecb3; border-radius: 14px; padding: 16px; margin-top: 12px; }
+        .archive-box { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 14px; padding: 16px; margin-top: 12px; }
+        .esito-label { font-weight: 600; padding: 4px 12px; border-radius: 999px; display: inline-block; margin-bottom: 8px; }
         .small-text { color: var(--muted); font-size: .95rem; }
+        .history-entry { border-bottom: 1px solid var(--border); padding: 12px 0; }
+        .history-entry:last-child { border-bottom: none; }
+        .history-toggle { cursor: pointer; padding: 8px; border-radius: 10px; transition: background .15s; }
+        .history-toggle:hover { background: #f0f4f8; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="hero">
-            <h1>MLPG Tutor Web</h1>
-            <p>Prova il tutor in un'interfaccia grafica: genera il percorso, valuta la tua soluzione e ricevi chiarimenti mirati senza terminale.</p>
-        </div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <h3>Moduli da riprendere</h3>
+                <div id="archivedList">
+                    <p class="small-text">Nessun modulo archiviato.</p>
+                </div>
+            </div>
+            <div class="sidebar-section">
+                <h3>Storico sessioni</h3>
+                <div id="historyList">
+                    <p class="small-text">Caricamento...</p>
+                </div>
+            </div>
+        </aside>
 
-        <div class="card grid cols-3">
-            <div>
+        <main class="main">
+            <div class="card">
+                <h1>MLPG Tutor Web</h1>
+                <p>Genera il percorso, rispondi agli esercizi e ricevi feedback, suggerimenti e chiarimenti mirati.</p>
+            </div>
+
+            <div class="card">
                 <div id="message" class="error"></div>
                 <label>Argomento</label>
                 <input id="topic" placeholder="Esempio: programmazione Python" />
@@ -72,45 +107,103 @@
                 <input id="name" placeholder="Es. Matteo" />
                 <button style="margin-top: 12px;" onclick="generatePath()">Genera percorso</button>
             </div>
-            <div class="summary-block" style="padding-left: 16px;">
-                <div class="summary-item">
-                    <h2>Come funziona</h2>
-                    <p class="small-text">Genera i moduli, rispondi all'esercizio e chiedi chiarimenti puntuali. Ogni modulo può ricevere feedback e una spiegazione adattata al tuo livello.</p>
-                </div>
-                <div class="summary-item">
-                    <h3>Strumenti</h3>
-                    <ul>
-                        <li>Feedback automatico</li>
-                        <li>Chiarimenti mirati</li>
-                        <li>Riepilogo finale</li>
-                        <li>Saluto empatico</li>
-                    </ul>
-                </div>
+
+            <div id="pathContainer"></div>
+
+            <div id="summaryCard" class="card hidden">
+                <h2>Riepilogo sessione</h2>
+                <div id="summaryContent"></div>
+                <button id="generateSummaryButton" style="margin-top: 16px;" onclick="generateFinalSummary()">Genera riepilogo finale</button>
+                <div id="salutoText" style="margin-top: 18px; font-size: 1rem; line-height: 1.7;"></div>
             </div>
-        </div>
-
-        <div id="pathContainer"></div>
-
-        <div id="summaryCard" class="card hidden">
-            <h2>Riepilogo sessione</h2>
-            <div id="summaryContent"></div>
-            <button id="generateSummaryButton" style="margin-top: 16px;" onclick="generateFinalSummary()">Genera riepilogo finale</button>
-            <div id="salutoText" class="final-salute" style="margin-top: 18px; font-size: 1rem; line-height: 1.7;"></div>
-        </div>
+        </main>
     </div>
 
     <script>
         let currentResponse = null;
         let currentModuleIndex = 0;
+        let currentSessionId = null;
         let puntiForza = [];
         let diarioNote = [];
         let interruzioneDubbio = false;
         let moduleSolutions = {};
         let finalSummary = null;
+        let archiveModules = [];
+        let currentArchiveView = null;
+
+        let moduliDbIds = {};
+        let moduliState = {};
 
         function setMessage(text) {
             const msg = document.getElementById('message');
             msg.textContent = text;
+        }
+
+        document.addEventListener('DOMContentLoaded', loadHistory);
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history');
+                const data = await res.json();
+                if (!data.success) return;
+                renderHistory(data.data);
+            } catch (e) {}
+        }
+
+        function renderHistory(sessions) {
+            const el = document.getElementById('historyList');
+            if (!sessions.length) {
+                el.innerHTML = '<p class="small-text">Nessuna sessione passata.</p>';
+                return;
+            }
+            el.innerHTML = sessions.map(s => `
+                <div class="history-entry">
+                    <div class="history-toggle" onclick="toggleHistoryDetail(${s.id}, this)">
+                        <strong>${s.topic}</strong> · ${s.level}
+                        <span class="small-text">(${new Date(s.created_at).toLocaleDateString('it-IT')})</span>
+                    </div>
+                    <div id="historyDetail-${s.id}" class="hidden" style="padding: 8px 0 0 0;"></div>
+                </div>
+            `).join('');
+        }
+
+        async function toggleHistoryDetail(sessionId, toggleEl) {
+            const detail = document.getElementById(`historyDetail-${sessionId}`);
+            if (!detail.classList.contains('hidden')) {
+                detail.classList.add('hidden');
+                detail.innerHTML = '';
+                return;
+            }
+            if (detail.dataset.loaded) {
+                detail.classList.remove('hidden');
+                return;
+            }
+            try {
+                const res = await fetch('/api/session-detail', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ session_id: sessionId }),
+                });
+                const data = await res.json();
+                if (!data.success) return;
+                detail.dataset.loaded = '1';
+                const modules = data.data;
+                detail.innerHTML = modules.map(m => {
+                    const statusTag = m.archived ? '<span class="tag tag-archived">Archiviato</span>' : m.completed ? '<span class="tag" style="background:#dcfce7;color:#166534;">Completato</span>' : '';
+                    const attempts = (m.attempts || []).map(a =>
+                        `<div class="small-text">→ ${a.esito || 'sbagliata'}: ${a.soluzione.substring(0, 60)}</div>`
+                    ).join('');
+                    return `
+                        <div style="padding: 8px 0; border-bottom:1px solid #eee;">
+                            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                <span>Modulo ${m.module_index + 1}</span> ${statusTag}
+                            </div>
+                            ${attempts ? `<div style="margin-top:4px;">${attempts}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+                detail.classList.remove('hidden');
+            } catch (e) {}
         }
 
         async function generatePath() {
@@ -138,13 +231,26 @@
                 }
 
                 currentResponse = data.data;
+                currentSessionId = data.session_id;
                 currentModuleIndex = 0;
+                currentArchiveView = null;
                 puntiForza = [];
                 diarioNote = [];
                 interruzioneDubbio = false;
                 moduleSolutions = {};
                 finalSummary = null;
+                archiveModules = [];
+                moduliDbIds = data.module_db_ids || {};
+                moduliState = {};
+
+                const moduli = currentResponse.percorso_studio.moduli;
+                moduli.forEach((m, i) => {
+                    moduliState[m.id] = { tentativi: 0, ultimaRisposta: null, archived: false, completed: false };
+                });
+
                 renderPath();
+                renderArchivedSidebar();
+                loadHistory();
             } catch (err) {
                 setMessage('Errore di connessione. Riprova.');
             }
@@ -169,9 +275,15 @@
             tabs.className = 'tab-list';
             percorso_studio.moduli.forEach((modulo, index) => {
                 const tab = document.createElement('div');
-                tab.className = `tab ${index === currentModuleIndex ? 'active' : ''}`;
+                const state = moduliState[modulo.id];
+                let extra = '';
+                if (state.archived) extra = 'archived';
+                else if (state.completed) extra = 'completed';
+                tab.className = `tab ${index === currentModuleIndex && currentArchiveView === null ? 'active' : ''} ${extra}`;
                 tab.textContent = `Modulo ${modulo.id}`;
-                tab.onclick = () => changeModule(index);
+                if (state.archived) tab.textContent += ' 📦';
+                else if (state.completed) tab.textContent += ' ✅';
+                tab.onclick = () => { currentArchiveView = null; changeModule(index); };
                 tabs.appendChild(tab);
             });
             container.appendChild(tabs);
@@ -185,9 +297,27 @@
         }
 
         function renderModule() {
-            const module = currentResponse.percorso_studio.moduli[currentModuleIndex];
             const moduleWrapper = document.getElementById('moduleDetail');
             moduleWrapper.innerHTML = '';
+
+            // If viewing an archived module
+            if (currentArchiveView !== null) {
+                renderArchivedModuleView(moduleWrapper);
+                return;
+            }
+
+            const module = currentResponse.percorso_studio.moduli[currentModuleIndex];
+            const state = moduliState[module.id];
+
+            if (state.archived) {
+                moduleWrapper.innerHTML = `
+                    <div class="card archive-box">
+                        <h3>Modulo ${module.id}: ${module.titolo_modulo}</h3>
+                        <p>📦 Questo modulo è stato archiviato. Puoi riprenderlo dalla sidebar "Moduli da riprendere".</p>
+                    </div>
+                `;
+                return;
+            }
 
             const card = document.createElement('div');
             card.className = 'card module-card';
@@ -195,7 +325,7 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
                     <div>
                         <h3>Modulo ${module.id}: ${module.titolo_modulo}</h3>
-                        <div class="badge">Stai lavorando su questo modulo</div>
+                        ${state.completed ? '<div class="badge badge-success">✅ Completato</div>' : '<div class="badge">In corso</div>'}
                     </div>
                     <div style="text-align:right;">
                         <div class="small-text">Moduli totali: ${currentResponse.percorso_studio.moduli.length}</div>
@@ -206,22 +336,58 @@
                 <p>${module.spiegazione}</p>
                 <p><strong>Esercizio</strong></p>
                 <p>${module.esercizio_pratico}</p>
-                <label>La tua soluzione</label>
-                <textarea id="solution-${module.id}" rows="5" placeholder="Inserisci qui la tua risposta..."></textarea>
-                <button onclick="evaluateModule(${module.id})" style="margin-top:12px;">Valuta soluzione</button>
-                <button onclick="showClarify(${module.id})" style="margin-top:12px;background:#f3bb43;color:#202124;">Chiedi chiarimenti</button>
-                <div id="feedback-${module.id}" class="feedback"></div>
-                <div id="clarify-${module.id}" class="clarification hidden"></div>
+                <div id="feedback-${module.id}"></div>
+                <div id="hintArea-${module.id}"></div>
+                ${!state.completed ? `
+                    <label>La tua soluzione</label>
+                    <textarea id="solution-${module.id}" rows="5" placeholder="Inserisci qui la tua risposta..."></textarea>
+                    <button onclick="evaluateModule(${module.id})" style="margin-top:12px;">Valuta soluzione</button>
+                    <button onclick="showClarify(${module.id})" class="warning" style="margin-top:12px;">Chiedi chiarimenti</button>
+                    <div id="clarify-${module.id}" class="hidden clarification"></div>
+                ` : ''}
                 <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:18px;">
-                    <button onclick="prevModule()" style="flex:1;background:#ffffff;color:var(--primary);border:1px solid var(--primary);">Modulo precedente</button>
+                    <button onclick="prevModule()" class="secondary" style="flex:1;">Modulo precedente</button>
                     <button onclick="nextModule()" style="flex:1;">Modulo successivo</button>
                 </div>
             `;
             moduleWrapper.appendChild(card);
 
-            const progress = ((currentModuleIndex + 1) / currentResponse.percorso_studio.moduli.length) * 100;
-            document.getElementById('progressFill').style.width = `${progress}%`;
+            updateProgress();
             updateTabs();
+            updateArchivedSidebar();
+        }
+
+        function renderArchivedModuleView(wrapper) {
+            const { modulo } = currentArchiveView;
+            const card = document.createElement('div');
+            card.className = 'card module-card';
+            card.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <h3>📦 Modulo ${modulo.id}: ${modulo.titolo_modulo}</h3>
+                        <div class="badge badge-warning">Da riprendere</div>
+                    </div>
+                </div>
+                <p><strong>Spiegazione</strong></p>
+                <p>${modulo.spiegazione}</p>
+                <p><strong>Esercizio</strong></p>
+                <p>${modulo.esercizio_pratico}</p>
+                <div id="archiveFeedback-${modulo.id}"></div>
+                <div id="archiveHintArea-${modulo.id}"></div>
+                <label>La tua soluzione</label>
+                <textarea id="archiveSolution-${modulo.id}" rows="5" placeholder="Riprova a risolvere l'esercizio..."></textarea>
+                <button onclick="evaluateArchivedModule(${modulo.id})" style="margin-top:12px;">Valuta soluzione</button>
+                <button onclick="closeArchiveView()" class="secondary" style="margin-top:12px;">Chiudi vista archivio</button>
+                <div id="archiveClarify-${modulo.id}" class="clarification hidden"></div>
+            `;
+            wrapper.appendChild(card);
+            updateProgress();
+            updateTabs();
+        }
+
+        function closeArchiveView() {
+            currentArchiveView = null;
+            renderModule();
         }
 
         function changeModule(index) {
@@ -245,14 +411,24 @@
 
         function updateTabs() {
             document.querySelectorAll('.tab').forEach((tab, index) => {
-                tab.classList.toggle('active', index === currentModuleIndex);
+                tab.classList.toggle('active', index === currentModuleIndex && currentArchiveView === null);
             });
+        }
+
+        function updateProgress() {
+            const { percorso_studio } = currentResponse;
+            let completed = 0;
+            percorso_studio.moduli.forEach(m => { if (moduliState[m.id].completed) completed++; });
+            const pct = (completed / percorso_studio.moduli.length) * 100;
+            const fill = document.getElementById('progressFill');
+            if (fill) fill.style.width = `${pct}%`;
         }
 
         async function evaluateModule(moduleId) {
             setMessage('');
             const solution = document.getElementById(`solution-${moduleId}`).value.trim();
-            const modulo = currentResponse.percorso_studio.moduli.find((m) => m.id === moduleId);
+            const modulo = currentResponse.percorso_studio.moduli.find(m => m.id === moduleId);
+            const state = moduliState[moduleId];
 
             if (!solution) {
                 setMessage('Inserisci una soluzione prima di valutare.');
@@ -263,7 +439,11 @@
                 const res = await fetch('/api/evaluate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ esercizio: modulo.esercizio_pratico, soluzione: solution }),
+                    body: JSON.stringify({
+                        esercizio: modulo.esercizio_pratico,
+                        soluzione: solution,
+                        module_db_id: moduliDbIds[moduleId],
+                    }),
                 });
                 const data = await res.json();
                 const feedbackDiv = document.getElementById(`feedback-${moduleId}`);
@@ -273,41 +453,235 @@
                     return;
                 }
 
-                puntiForza.push(data.commento_costruttivo);
-                moduleSolutions[moduleId] = {
-                    esercizio: modulo.esercizio_pratico,
-                    soluzione,
-                };
+                const esito = data.esito || 'sbagliata';
+
+                if (esito === 'corretta') {
+                    state.completed = true;
+                    moduleSolutions[moduleId] = { esercizio: modulo.esercizio_pratico, soluzione };
+                    if (moduliDbIds[moduleId]) {
+                        await fetch('/api/complete-module', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ module_db_id: moduliDbIds[moduleId] }),
+                        });
+                    }
+                    puntiForza.push(data.commento_costruttivo);
+                    feedbackDiv.innerHTML = `
+                        <div class="badge badge-success">✅ Corretta!</div>
+                        <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
+                        <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
+                    `;
+                    document.getElementById(`hintArea-${moduleId}`).innerHTML = '';
+                    renderModule();
+                    updateSummary();
+                    return;
+                }
+
+                // Risposta sbagliata o parziale
+                const sameAnswer = state.ultimaRisposta === solution;
+                if (!sameAnswer) {
+                    state.tentativi += 1;
+                    state.ultimaRisposta = solution;
+                }
+
                 feedbackDiv.innerHTML = `
-                    <div class="badge">Feedback ricevuto</div>
+                    <div class="badge ${esito === 'parziale' ? 'badge-warning' : 'badge-error'}">
+                        ${esito === 'parziale' ? '🤔 Parziale' : '😅 Sbagliata'}
+                    </div>
                     <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
                     <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
                 `;
+
+                if (state.tentativi >= 2 && !sameAnswer) {
+                    state.archived = true;
+                    archiveModules.push({ id: modulo.id, titolo: modulo.titolo_modulo, spiegazione: modulo.spiegazione, esercizio: modulo.esercizio_pratico, livello: document.getElementById('level').value });
+                    if (moduliDbIds[moduleId]) {
+                        await fetch('/api/archive-module', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ module_db_id: moduliDbIds[moduleId] }),
+                        });
+                    }
+                    diarioNote.push(`Modulo ${modulo.id} (${modulo.titolo_modulo}): archiviato dopo 2 tentativi`);
+                    document.getElementById(`hintArea-${moduleId}`).innerHTML = `
+                        <div class="archive-box">
+                            <p>📦 Questo modulo è stato archiviato. Potrai riprenderlo in un secondo momento dalla sidebar "Moduli da riprendere".</p>
+                        </div>
+                    `;
+                    renderModule();
+                    renderArchivedSidebar();
+                    updateSummary();
+                    return;
+                }
+
+                // Primo tentativo — mostra hint
+                if (!sameAnswer) {
+                    try {
+                        const hintRes = await fetch('/api/hint', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                esercizio: modulo.esercizio_pratico,
+                                soluzione: solution,
+                                livello: document.getElementById('level').value,
+                                tentativo: state.tentativi,
+                            }),
+                        });
+                        const hintData = await hintRes.json();
+                        const hintText = hintData.success ? hintData.hint : 'Rileggi la spiegazione e prova con un approccio diverso.';
+                        document.getElementById(`hintArea-${moduleId}`).innerHTML = `
+                            <div class="hint-box">
+                                <strong>💡 Suggerimento (tentativo ${state.tentativi}/2):</strong>
+                                <p style="margin-top:6px;">${hintText}</p>
+                            </div>
+                        `;
+                    } catch (e) {
+                        document.getElementById(`hintArea-${moduleId}`).innerHTML = `
+                            <div class="hint-box">
+                                <strong>💡 Suggerimento:</strong>
+                                <p style="margin-top:6px;">Rileggi la spiegazione e prova con un approccio diverso.</p>
+                            </div>
+                        `;
+                    }
+                } else {
+                    document.getElementById(`hintArea-${moduleId}`).innerHTML = `
+                        <div class="hint-box">
+                            <p>ℹ️ Hai inviato la stessa risposta. Rileggi il suggerimento sopra e prova con un approccio diverso.</p>
+                        </div>
+                    `;
+                }
                 updateSummary();
             } catch (err) {
                 setMessage('Errore di connessione durante la valutazione.');
             }
         }
 
+        async function evaluateArchivedModule(moduleId) {
+            setMessage('');
+            const solution = document.getElementById(`archiveSolution-${moduleId}`).value.trim();
+            const modulo = currentArchiveView.modulo;
+
+            if (!solution) {
+                setMessage('Inserisci una soluzione prima di valutare.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/evaluate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        esercizio: modulo.esercizio_pratico,
+                        soluzione: solution,
+                        module_db_id: null,
+                    }),
+                });
+                const data = await res.json();
+                const feedbackDiv = document.getElementById(`archiveFeedback-${moduleId}`);
+
+                if (!data.success) {
+                    feedbackDiv.innerHTML = `<p class="error">${data.error || 'Errore.'}</p>`;
+                    return;
+                }
+
+                const esito = data.esito || 'sbagliata';
+                let badgeClass = 'badge-success';
+                let icon = '✅';
+                if (esito === 'parziale') { badgeClass = 'badge-warning'; icon = '🤔'; }
+                else if (esito === 'sbagliata') { badgeClass = 'badge-error'; icon = '😅'; }
+
+                feedbackDiv.innerHTML = `
+                    <div class="badge ${badgeClass}">${icon} ${esito === 'corretta' ? 'Corretta!' : esito === 'parziale' ? 'Parziale' : 'Sbagliata'}</div>
+                    <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
+                    <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
+                `;
+
+                if (esito !== 'corretta') {
+                    try {
+                        const hintRes = await fetch('/api/hint', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                esercizio: modulo.esercizio_pratico,
+                                soluzione: solution,
+                                livello: currentArchiveView.livello || document.getElementById('level').value,
+                                tentativo: 1,
+                            }),
+                        });
+                        const hintData = await hintRes.json();
+                        const hintText = hintData.success ? hintData.hint : 'Rileggi la spiegazione e riprova.';
+                        document.getElementById(`archiveHintArea-${moduleId}`).innerHTML = `
+                            <div class="hint-box">
+                                <strong>💡 Suggerimento:</strong>
+                                <p style="margin-top:6px;">${hintText}</p>
+                            </div>
+                        `;
+                    } catch (e) {
+                        document.getElementById(`archiveHintArea-${moduleId}`).innerHTML = `
+                            <div class="hint-box">
+                                <strong>💡 Suggerimento:</strong>
+                                <p style="margin-top:6px;">Rileggi la spiegazione e riprova.</p>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (err) {
+                setMessage('Errore di connessione.');
+            }
+        }
+
+        function renderArchivedSidebar() {
+            const el = document.getElementById('archivedList');
+            if (!archiveModules.length) {
+                el.innerHTML = '<p class="small-text">Nessun modulo archiviato.</p>';
+                return;
+            }
+            el.innerHTML = archiveModules.map((m, i) => `
+                <div class="sidebar-item" onclick="openArchivedModule(${i})">
+                    📦 ${m.titolo}
+                    <span class="tag tag-archived">Archiviato</span>
+                </div>
+            `).join('');
+        }
+
+        function updateArchivedSidebar() {
+            renderArchivedSidebar();
+        }
+
+        function openArchivedModule(index) {
+            const m = archiveModules[index];
+            currentArchiveView = {
+                modulo: {
+                    id: m.id,
+                    titolo_modulo: m.titolo,
+                    spiegazione: m.spiegazione,
+                    esercizio_pratico: m.esercizio,
+                },
+                livello: m.livello,
+            };
+            document.getElementById('moduleDetail').innerHTML = '';
+            renderModule();
+        }
+
         function showClarify(moduleId) {
             const clarifyDiv = document.getElementById(`clarify-${moduleId}`);
-            if (clarifyDiv.classList.contains('hidden')) {
-                clarifyDiv.classList.remove('hidden');
-                clarifyDiv.innerHTML = `
-                    <label>Qual è il dubbio specifico?</label>
-                    <textarea id="dubbio-${moduleId}" rows="3" placeholder="Esempio: non capisco il ciclo for"></textarea>
-                    <button onclick="clarifyModule(${moduleId})" style="margin-top:10px;background:#f59e0b;color:#202124;">Genera spiegazione mirata</button>
-                `;
-            } else {
+            if (!clarifyDiv.classList.contains('hidden')) {
                 clarifyDiv.classList.add('hidden');
                 clarifyDiv.innerHTML = '';
+                return;
             }
+            clarifyDiv.classList.remove('hidden');
+            clarifyDiv.innerHTML = `
+                <label>Qual è il dubbio specifico?</label>
+                <textarea id="dubbio-${moduleId}" rows="3" placeholder="Esempio: non capisco il ciclo for"></textarea>
+                <button onclick="clarifyModule(${moduleId})" class="warning" style="margin-top:10px;">Genera spiegazione mirata</button>
+            `;
         }
 
         async function clarifyModule(moduleId) {
             setMessage('');
             const dubbio = document.getElementById(`dubbio-${moduleId}`).value.trim();
-            const modulo = currentResponse.percorso_studio.moduli.find((m) => m.id === moduleId);
+            const modulo = currentResponse.percorso_studio.moduli.find(m => m.id === moduleId);
             const level = document.getElementById('level').value;
 
             if (!dubbio) {
@@ -319,13 +693,13 @@
                 const res = await fetch('/api/clarify', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ argomento: modulo.titolo_modulo, spiegazione: modulo.spiegazione, dubbio, livello }),
+                    body: JSON.stringify({ argomento: modulo.titolo_modulo, spiegazione: modulo.spiegazione, dubbio, livello: level }),
                 });
                 const data = await res.json();
                 const clarifyDiv = document.getElementById(`clarify-${moduleId}`);
 
                 if (!data.success) {
-                    clarifyDiv.innerHTML += `<p class="error">${data.error || 'Errore nella generazione della spiegazione.'}</p>`;
+                    clarifyDiv.innerHTML += `<p class="error">${data.error || 'Errore.'}</p>`;
                     return;
                 }
 
@@ -340,26 +714,20 @@
                 `;
                 updateSummary();
             } catch (err) {
-                setMessage('Errore di connessione durante la generazione del chiarimento.');
+                setMessage('Errore di connessione.');
             }
         }
 
         function updateSummary() {
             const summary = document.getElementById('summaryContent');
-            const level = document.getElementById('level').value || 'N/D';
             const summaryButton = document.getElementById('generateSummaryButton');
-            const isLastModule = currentResponse && currentModuleIndex === currentResponse.percorso_studio.moduli.length - 1;
 
             if (summaryButton) {
-                summaryButton.style.display = isLastModule ? 'block' : 'none';
+                summaryButton.style.display = currentResponse ? 'block' : 'none';
             }
 
             if (finalSummary) {
                 summary.innerHTML = `
-                    <div class="summary-item">
-                        <h3>Livello di partenza</h3>
-                        <p>${level}</p>
-                    </div>
                     <div class="summary-item">
                         <h3>Punti di forza</h3>
                         <ul>${finalSummary.punti_di_forza.length ? finalSummary.punti_di_forza.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto di forza disponibile.</li>'}</ul>
@@ -374,42 +742,43 @@
                     </div>
                     <div class="summary-item">
                         <h3>Saluto conclusivo</h3>
-                        <p>${finalSummary.saluto_conclusivo || 'Nessun saluto conclusivo disponibile.'}</p>
+                        <p>${finalSummary.saluto_conclusivo || 'Nessun saluto disponibile.'}</p>
                     </div>
                 `;
                 document.getElementById('salutoText').textContent = '';
                 return;
             }
 
-            const riepilogo = {};
-            const puntiForzaList = puntiForza;
-            const puntiDaMigliorareList = [];
-            const diarioText = diarioNote.length ? diarioNote.join('; ') : 'Nessuna difficoltà specifica registrata.';
+            if (!currentResponse) return;
+
+            const level = document.getElementById('level').value || 'N/D';
+            const { percorso_studio } = currentResponse;
+            const completati = percorso_studio.moduli.filter(m => moduliState[m.id].completed).length;
+            const archiviati = percorso_studio.moduli.filter(m => moduliState[m.id].archived).length;
+            const moduliNote = diarioNote.length ? diarioNote.join('; ') : 'Nessuna difficoltà specifica registrata.';
 
             summary.innerHTML = `
-                <div class="summary-item">
-                    <h3>Livello di partenza</h3>
-                    <p>${level}</p>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div class="summary-item">
+                        <strong>Livello</strong>
+                        <p>${level}</p>
+                    </div>
+                    <div class="summary-item">
+                        <strong>Progresso</strong>
+                        <p>${completati}/${percorso_studio.moduli.length} completati</p>
+                    </div>
+                    <div class="summary-item">
+                        <strong>Archiviati</strong>
+                        <p>${archiviati}</p>
+                    </div>
+                    <div class="summary-item">
+                        <strong>Commenti raccolti</strong>
+                        <p>${Object.keys(moduleSolutions).length}</p>
+                    </div>
                 </div>
-                <div class="summary-item">
-                    <h3>Commento costruttivo</h3>
-                    <p>${puntiForza.length ? puntiForza[0] : 'Nessun commento disponibile.'}</p>
-                </div>
-                <div class="summary-item">
-                    <h3>Punti di forza</h3>
-                    <ul>${puntiForzaList.length ? puntiForzaList.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto di forza disponibile.</li>'}</ul>
-                </div>
-                <div class="summary-item">
-                    <h3>Punti da migliorare</h3>
-                    <ul>${puntiDaMigliorareList.length ? puntiDaMigliorareList.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto da migliorare disponibile.</li>'}</ul>
-                </div>
-                <div class="summary-item">
-                    <h3>Diario di bordo</h3>
-                    <p>${diarioText}</p>
-                </div>
-                <div class="summary-item">
-                    <h3>Saluto conclusivo</h3>
-                    <p>Genera il riepilogo finale al termine del terzo modulo per vedere il saluto conclusivo.</p>
+                <div class="summary-item" style="margin-top:12px;">
+                    <strong>Diario di bordo</strong>
+                    <p>${moduliNote}</p>
                 </div>
             `;
             document.getElementById('salutoText').textContent = '';
@@ -421,7 +790,7 @@
             const solutions = Object.values(moduleSolutions);
 
             if (solutions.length === 0) {
-                setMessage('Inserisci almeno una soluzione ai moduli prima di generare il riepilogo finale.');
+                setMessage('Inserisci almeno una soluzione prima di generare il riepilogo finale.');
                 return;
             }
 
@@ -429,10 +798,9 @@
                 const res = await fetch('/api/final-summary', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ solutions, diary: diarioNote, livello: level }),
+                    body: JSON.stringify({ solutions, diary: diarioNote, livello: level, session_id: currentSessionId }),
                 });
                 const data = await res.json();
-                const salutoDiv = document.getElementById('salutoText');
 
                 if (!data.success) {
                     setMessage(data.error || 'Errore nella generazione del riepilogo finale.');
@@ -440,10 +808,10 @@
                 }
 
                 finalSummary = data.data;
-                salutoDiv.textContent = '';
+                document.getElementById('salutoText').textContent = '';
                 updateSummary();
             } catch (err) {
-                setMessage('Errore di connessione durante la generazione del riepilogo finale.');
+                setMessage('Errore di connessione.');
             }
         }
     </script>

@@ -1,20 +1,21 @@
 import os
 import json
 import math
+import logging
 import sqlite3
 import urllib.request
 import urllib.error
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+from .config import OPENROUTER_EMBED_URL, EMBED_MODEL, EMBED_TIMEOUT, RAG_TOP_K, RAG_SIMILARITY_THRESHOLD
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(dotenv_path=PROJECT_ROOT / '.env')
 DB_DIR = PROJECT_ROOT / 'data'
 DB_PATH = DB_DIR / 'mlpg_history.db'
-
-OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings"
-EMBED_MODEL = "openai/text-embedding-3-small"
 
 
 def _get_api_key():
@@ -91,11 +92,14 @@ def compute_embedding(text: str) -> list[float]:
         },
         method="POST",
     )
+    logger.debug("Calcolo embedding per testo (%d caratteri)", len(text))
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=EMBED_TIMEOUT) as resp:
             body = json.loads(resp.read().decode("utf-8"))
+            logger.debug("Embedding calcolato con successo")
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
+        logger.error("Embedding HTTP %s: %s", exc.code, body_text[:200])
         raise RuntimeError(f"Embedding HTTP {exc.code}: {body_text}") from exc
 
     try:
@@ -116,6 +120,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 # ── salvataggio ────────────────────────────────────────────
 
 def save_session(topic: str, level: str, modules_data: list[dict]) -> int:
+    logger.info("Salvataggio sessione: topic=%s, level=%s, moduli=%d", topic, level, len(modules_data))
     conn = _get_conn()
     now = datetime.now().isoformat()
     cur = conn.execute(
@@ -147,6 +152,7 @@ def save_session(topic: str, level: str, modules_data: list[dict]) -> int:
 
 
 def save_attempt(module_db_id: int, soluzione: str, esito: str, feedback_json: str):
+    logger.info("Salvataggio tentativo: module_id=%s, esito=%s", module_db_id, esito)
     conn = _get_conn()
     now = datetime.now().isoformat()
     conn.execute(
@@ -211,7 +217,7 @@ def get_module_attempts(module_db_id: int) -> list[dict]:
 def find_similar_modules(query: str, top_k: int = 5) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT m.id, m.titolo, m.spiegazione, m.esercizio, s.topic, s.level "
+        "SELECT m.id, m.titolo, m.spiegazione, m.esercizio, m.embedding, s.topic, s.level "
         "FROM modules m JOIN sessions s ON m.session_id = s.id "
         "WHERE m.embedding IS NOT NULL "
         "ORDER BY s.created_at DESC"
@@ -236,4 +242,4 @@ def find_similar_modules(query: str, top_k: int = 5) -> list[dict]:
         scored.append((sim, dict(r)))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [item for _, item in scored[:top_k] if _ > 0.3]
+    return [item for _, item in scored[:top_k] if _ > RAG_SIMILARITY_THRESHOLD]
