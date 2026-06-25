@@ -69,3 +69,18 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 - **Feature:** Database SQLite persistente (`src/database.py`) con embedding via OpenRouter e RAG retrieval.
 - **Feature:** Storico sessioni navigabile con moduli cliccabili e riesumibili.
 - **Lezione appresa:** La normalizzazione JSON va applicata in tutti i punti di parsing, non solo in alcuni. Le modifiche ai campi dei dati salvati richiedono migrazioni retrocompatibili.
+
+---
+
+## [25 Giugno 2026] - Completamento migrazione Gemini → OpenRouter
+- **Errore:** `NameError: name 'st' is not defined` in `streamlit_app.py`.
+  - **Soluzione:** Ripristinato file da git (era stato corrotto durante edit). File originale contiene tutte le importazioni necessarie (`streamlit as st`, `src.generator`, `src.database`).
+  - **Nota:** L'app richiede `src.database` che fornisce `get_all_sessions()`, `get_session_modules()`, `save_session()`, `get_module_attempts()`.
+
+- **Status:** Migrazione da Gemini a OpenRouter completata.
+  - `src/generator.py`: Tutte le funzioni ora usano `OPENROUTER_API_URL = "https://api.openrouter.ai/v1/chat/completions"`.
+  - `requirements.txt`: Rimosso `google-generativeai`, mantenute dipendenze per OpenRouter (native con urllib).
+  - `.env`: Aggiunto `OPENROUTER_API_KEY`, rimosso `GEMINI_API_KEY`.
+  - `streamlit_app.py`: Recuperato e validato (integro).
+  
+- **Lezione appresa:** Quando si ripristina da git dopo edits corrotti, verificare che tutte le dipendenze siano importate correttamente e che il file abbia la struttura prevista.

@@ -173,6 +173,34 @@ def update_module_state(module_db_id: int, completed: bool = False, archived: bo
     conn.close()
 
 
+def rename_module(module_db_id: int, new_title: str):
+    logger.info("Rinomina modulo: id=%s, nuovo_titolo=%s", module_db_id, new_title)
+    conn = _get_conn()
+    conn.execute("UPDATE modules SET titolo = ? WHERE id = ?", (new_title, module_db_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_module(module_db_id: int):
+    logger.info("Elimina modulo: id=%s", module_db_id)
+    conn = _get_conn()
+    session_id_row = conn.execute(
+        "SELECT session_id FROM modules WHERE id = ?", (module_db_id,)
+    ).fetchone()
+    session_id = session_id_row["session_id"] if session_id_row else None
+    conn.execute("DELETE FROM attempts WHERE module_id = ?", (module_db_id,))
+    conn.execute("DELETE FROM modules WHERE id = ?", (module_db_id,))
+    if session_id:
+        remaining = conn.execute(
+            "SELECT COUNT(*) as cnt FROM modules WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if remaining["cnt"] == 0:
+            logger.info("Nessun modulo rimasto, elimino sessione: id=%s", session_id)
+            conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+
 def save_riepilogo(session_id: int, riepilogo_text: str):
     conn = _get_conn()
     conn.execute("UPDATE sessions SET riepilogo = ? WHERE id = ?", (riepilogo_text, session_id))

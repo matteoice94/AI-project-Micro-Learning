@@ -86,3 +86,22 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Azione:** Aggiunta sezione "Storico" nella sidebar e vista moduli passati cliccabili/riesumibili.
   - **Obiettivo:** Navigare sessioni precedenti e riprovare moduli.
   - **Risultato:** Storico persistente con tentativi, stato e riapertura moduli.
+
+---
+
+## [25 Giugno 2026] - Completamento migrazione provider Gemini → OpenRouter
+- **Azione:** Migrazione completa da Google Gemini a OpenRouter per tutte le funzioni in `src/generator.py`.
+  - **Dettagli:** 
+    - Endpoint corretto: `https://api.openrouter.ai/v1/chat/completions`
+    - Modello usato: `gpt-4o-mini` (default OpenRouter)
+    - Tutte le funzioni (`generate_microlearning_path`, `valuta_risposta`, `genera_spiegazione_alternativa`, `genera_riepilogo_finale`, `genera_hint`, `genera_saluto_finale`) ora usano OpenRouter via `urllib.request`
+  - **Obiettivo:** Eliminare dipendenza da Google Gemini API e sfruttare OpenRouter per maggiore flessibilità di modello.
+  - **Risultato:** Codebase funzionante con OpenRouter, `.env` aggiornato con `OPENROUTER_API_KEY`.
+
+- **Azione:** Pulizia di `requirements.txt`: rimosso `google-generativeai`, mantenute sole dipendenze essenziali.
+  - **Obiettivo:** Ridurre weight del progetto e eliminate dipendenze inutili.
+  - **Risultato:** Setup più leggero e focus su OpenRouter.
+
+- **Azione:** Ripristino e validazione di `streamlit_app.py` da git (file corrotto durante edit manuale).
+  - **Obiettivo:** Recuperare struttura integra con tutte le importazioni (`streamlit`, `src.generator`, `src.database`).
+  - **Risultato:** Streamlit app completamente funzionante con storico sessioni, gestione moduli e riapertura moduli archiviati.

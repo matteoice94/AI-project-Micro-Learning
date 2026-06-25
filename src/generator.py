@@ -163,7 +163,7 @@ def generate_microlearning_path(topic: str, level: str, context_modules: list | 
     )
 
     if context_modules:
-        contesto = "\n\nEsempi di moduli su argomenti simili già creati in passato (usali come ispirazione per struttura e profondità, non copiarli):\n"
+        contesto = "\n\nModuli già creati su argomenti simili (NON ripetere gli stessi contenuti; copri aspetti DIVERSI):\n"
         for i, cm in enumerate(context_modules[:3], 1):
             contesto += f"{i}. [{cm['topic']}] {cm['titolo']}: {cm['spiegazione'][:200]}\n"
         user_prompt += contesto

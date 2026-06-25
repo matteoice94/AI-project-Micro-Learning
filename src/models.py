@@ -8,7 +8,7 @@ class Metadati(BaseModel):
 class Modulo(BaseModel):
     id: int
     titolo_modulo: str
-    spiegazione: str = Field(..., max_length=1500)
+    spiegazione: str = Field(..., max_length=2500)
     esercizio_pratico: str
 
     model_config = {

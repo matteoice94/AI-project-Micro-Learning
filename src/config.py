@@ -4,7 +4,7 @@
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "gpt-4o-mini"
 CHAT_TIMEOUT = 60  # secondi per urlopen
-CHAT_TEMPERATURE_DEFAULT = 0.2
+CHAT_TEMPERATURE_DEFAULT = 0.7
 CHAT_TEMPERATURE_HINT = 0.4
 
 # ── Retry ──────────────────────────────────────────────────
