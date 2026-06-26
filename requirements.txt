@@ -3,3 +3,4 @@ pydantic
 flask
 streamlit
 pytest
+psycopg2-binary

@@ -20,15 +20,28 @@ load_dotenv(dotenv_path=PROJECT_ROOT / '.env')
 DB_DIR = PROJECT_ROOT / 'data'
 DB_PATH = DB_DIR / 'mlpg_history.db'
 
+# ── Backend detection ──────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL")
+IS_PG = bool(DATABASE_URL)
 
-def _get_api_key():
-    key = os.getenv("OPENROUTER_API_KEY")
-    if not key:
-        raise RuntimeError("OPENROUTER_API_KEY non trovata per embeddings.")
-    return key
+if IS_PG:
+    import psycopg2
+    import psycopg2.extras
+    import psycopg2.errors
+
+
+def _adapt(sql: str) -> str:
+    """Converte ? → %s per PostgreSQL"""
+    if IS_PG:
+        return sql.replace("?", "%s")
+    return sql
 
 
 def _get_conn():
+    if IS_PG:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn.autocommit = False
+        return conn
     DB_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -37,56 +50,124 @@ def _get_conn():
     return conn
 
 
+def _insert_returning_id(conn, sql: str, params: tuple) -> int:
+    """INSERT e ritorna l'ID generato (funziona su entrambi i backend)"""
+    cur = conn.cursor()
+    cur.execute(_adapt(sql + (" RETURNING id" if IS_PG else "")), params)
+    if IS_PG:
+        row = cur.fetchone()
+        cur.close()
+        return row["id"]
+    cur.close()
+    return cur.lastrowid
+
+
+# ── DDL ─────────────────────────────────────────────────────
+
+def _exec_ddl(conn, statements: list[str]):
+    """Esegue una lista di statement DDL"""
+    cur = conn.cursor()
+    for stmt in statements:
+        cur.execute(stmt)
+    cur.close()
+
+
+SCHEMA_SQLITE = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
+    topic TEXT NOT NULL,
+    level TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    riepilogo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS modules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    module_index INTEGER NOT NULL,
+    titolo TEXT NOT NULL,
+    spiegazione TEXT NOT NULL,
+    esercizio TEXT NOT NULL,
+    completed INTEGER DEFAULT 0,
+    archived INTEGER DEFAULT 0,
+    embedding TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id INTEGER NOT NULL,
+    soluzione TEXT,
+    esito TEXT,
+    feedback_json TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES modules(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
+"""
+
+SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    topic TEXT NOT NULL,
+    level TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    riepilogo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS modules (
+    id SERIAL PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    module_index INTEGER NOT NULL,
+    titolo TEXT NOT NULL,
+    spiegazione TEXT NOT NULL,
+    esercizio TEXT NOT NULL,
+    completed INTEGER DEFAULT 0,
+    archived INTEGER DEFAULT 0,
+    embedding TEXT
+);
+
+CREATE TABLE IF NOT EXISTS attempts (
+    id SERIAL PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id),
+    soluzione TEXT,
+    esito TEXT,
+    feedback_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
+"""
+
+
 def init_db():
     conn = _get_conn()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER REFERENCES users(id),
-            topic TEXT NOT NULL,
-            level TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            riepilogo TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS modules (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            module_index INTEGER NOT NULL,
-            titolo TEXT NOT NULL,
-            spiegazione TEXT NOT NULL,
-            esercizio TEXT NOT NULL,
-            completed INTEGER DEFAULT 0,
-            archived INTEGER DEFAULT 0,
-            embedding TEXT,
-            FOREIGN KEY (session_id) REFERENCES sessions(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS attempts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            module_id INTEGER NOT NULL,
-            soluzione TEXT,
-            esito TEXT,
-            feedback_json TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (module_id) REFERENCES modules(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
-        CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
-    """)
-    # Migrazione: aggiungi user_id a sessions se manca (DB pre-esistenti)
-    cursor = conn.execute("PRAGMA table_info(sessions)")
-    cols = [row[1] for row in cursor.fetchall()]
-    if "user_id" not in cols:
-        conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    statements = (SCHEMA_PG if IS_PG else SCHEMA_SQLITE).strip().split(";")
+    _exec_ddl(conn, [s.strip() + ";" for s in statements if s.strip()])
+    if not IS_PG:
+        cursor = conn.execute("PRAGMA table_info(sessions)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "user_id" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id)")
     conn.commit()
     conn.close()
 
@@ -94,7 +175,9 @@ def init_db():
 # ── embedding ──────────────────────────────────────────────
 
 def compute_embedding(text: str) -> list[float]:
-    api_key = _get_api_key()
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY non trovata per embeddings.")
     payload = {"model": EMBED_MODEL, "input": text}
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -145,16 +228,17 @@ def create_user(username: str, password: str) -> int | None:
     now = datetime.now().isoformat()
     hashed = _hash_password(password)
     try:
-        cur = conn.execute(
+        uid = _insert_returning_id(
+            conn,
             "INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)",
             (username, hashed, now),
         )
         conn.commit()
-        uid = cur.lastrowid
         conn.close()
         return uid
-    except sqlite3.IntegrityError:
+    except Exception:
         logger.warning("Username già esistente: %s", username)
+        conn.rollback()
         conn.close()
         return None
 
@@ -163,7 +247,7 @@ def authenticate_user(username: str, password: str) -> dict | None:
     conn = _get_conn()
     hashed = _hash_password(password)
     row = conn.execute(
-        "SELECT id, username FROM users WHERE username = ? AND password = ?",
+        _adapt("SELECT id, username FROM users WHERE username = ? AND password = ?"),
         (username, hashed),
     ).fetchone()
     conn.close()
@@ -173,7 +257,7 @@ def authenticate_user(username: str, password: str) -> dict | None:
 def get_user_by_id(user_id: int) -> dict | None:
     conn = _get_conn()
     row = conn.execute(
-        "SELECT id, username FROM users WHERE id = ?", (user_id,)
+        _adapt("SELECT id, username FROM users WHERE id = ?"), (user_id,)
     ).fetchone()
     conn.close()
     return dict(row) if row else None
@@ -185,11 +269,11 @@ def save_session(topic: str, level: str, modules_data: list[dict], user_id: int 
     logger.info("Salvataggio sessione: topic=%s, level=%s, moduli=%d", topic, level, len(modules_data))
     conn = _get_conn()
     now = datetime.now().isoformat()
-    cur = conn.execute(
+    session_id = _insert_returning_id(
+        conn,
         "INSERT INTO sessions (topic, level, created_at, user_id) VALUES (?, ?, ?, ?)",
         (topic, level, now, user_id),
     )
-    session_id = cur.lastrowid
 
     for i, mod in enumerate(modules_data):
         testo_embed = f"{mod.get('titolo_modulo', mod.get('titolo', ''))} {mod.get('spiegazione', '')}"
@@ -203,8 +287,8 @@ def save_session(topic: str, level: str, modules_data: list[dict], user_id: int 
             emb_json = None
 
         conn.execute(
-            "INSERT INTO modules (session_id, module_index, titolo, spiegazione, esercizio, embedding) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            _adapt("INSERT INTO modules (session_id, module_index, titolo, spiegazione, esercizio, embedding) "
+                    "VALUES (?, ?, ?, ?, ?, ?)"),
             (session_id, i, titolo, spiegazione, esercizio, emb_json),
         )
 
@@ -218,7 +302,7 @@ def save_attempt(module_db_id: int, soluzione: str, esito: str, feedback_json: s
     conn = _get_conn()
     now = datetime.now().isoformat()
     conn.execute(
-        "INSERT INTO attempts (module_id, soluzione, esito, feedback_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        _adapt("INSERT INTO attempts (module_id, soluzione, esito, feedback_json, created_at) VALUES (?, ?, ?, ?, ?)"),
         (module_db_id, soluzione, esito, feedback_json, now),
     )
     conn.commit()
@@ -228,7 +312,7 @@ def save_attempt(module_db_id: int, soluzione: str, esito: str, feedback_json: s
 def update_module_state(module_db_id: int, completed: bool = False, archived: bool = False):
     conn = _get_conn()
     conn.execute(
-        "UPDATE modules SET completed = ?, archived = ? WHERE id = ?",
+        _adapt("UPDATE modules SET completed = ?, archived = ? WHERE id = ?"),
         (1 if completed else 0, 1 if archived else 0, module_db_id),
     )
     conn.commit()
@@ -238,7 +322,7 @@ def update_module_state(module_db_id: int, completed: bool = False, archived: bo
 def rename_module(module_db_id: int, new_title: str):
     logger.info("Rinomina modulo: id=%s, nuovo_titolo=%s", module_db_id, new_title)
     conn = _get_conn()
-    conn.execute("UPDATE modules SET titolo = ? WHERE id = ?", (new_title, module_db_id))
+    conn.execute(_adapt("UPDATE modules SET titolo = ? WHERE id = ?"), (new_title, module_db_id))
     conn.commit()
     conn.close()
 
@@ -247,18 +331,18 @@ def delete_module(module_db_id: int):
     logger.info("Elimina modulo: id=%s", module_db_id)
     conn = _get_conn()
     session_id_row = conn.execute(
-        "SELECT session_id FROM modules WHERE id = ?", (module_db_id,)
+        _adapt("SELECT session_id FROM modules WHERE id = ?"), (module_db_id,)
     ).fetchone()
     session_id = session_id_row["session_id"] if session_id_row else None
-    conn.execute("DELETE FROM attempts WHERE module_id = ?", (module_db_id,))
-    conn.execute("DELETE FROM modules WHERE id = ?", (module_db_id,))
+    conn.execute(_adapt("DELETE FROM attempts WHERE module_id = ?"), (module_db_id,))
+    conn.execute(_adapt("DELETE FROM modules WHERE id = ?"), (module_db_id,))
     if session_id:
         remaining = conn.execute(
-            "SELECT COUNT(*) as cnt FROM modules WHERE session_id = ?", (session_id,)
+            _adapt("SELECT COUNT(*) as cnt FROM modules WHERE session_id = ?"), (session_id,)
         ).fetchone()
         if remaining["cnt"] == 0:
             logger.info("Nessun modulo rimasto, elimino sessione: id=%s", session_id)
-            conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            conn.execute(_adapt("DELETE FROM sessions WHERE id = ?"), (session_id,))
     conn.commit()
     conn.close()
 
@@ -266,7 +350,7 @@ def delete_module(module_db_id: int):
 def rename_session(session_id: int, new_topic: str):
     logger.info("Rinomina sessione: id=%s, nuovo_topic=%s", session_id, new_topic)
     conn = _get_conn()
-    conn.execute("UPDATE sessions SET topic = ? WHERE id = ?", (new_topic, session_id))
+    conn.execute(_adapt("UPDATE sessions SET topic = ? WHERE id = ?"), (new_topic, session_id))
     conn.commit()
     conn.close()
 
@@ -275,18 +359,18 @@ def delete_session(session_id: int):
     logger.info("Elimina sessione: id=%s", session_id)
     conn = _get_conn()
     conn.execute(
-        "DELETE FROM attempts WHERE module_id IN (SELECT id FROM modules WHERE session_id = ?)",
+        _adapt("DELETE FROM attempts WHERE module_id IN (SELECT id FROM modules WHERE session_id = ?)"),
         (session_id,),
     )
-    conn.execute("DELETE FROM modules WHERE session_id = ?", (session_id,))
-    conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.execute(_adapt("DELETE FROM modules WHERE session_id = ?"), (session_id,))
+    conn.execute(_adapt("DELETE FROM sessions WHERE id = ?"), (session_id,))
     conn.commit()
     conn.close()
 
 
 def save_riepilogo(session_id: int, riepilogo_text: str):
     conn = _get_conn()
-    conn.execute("UPDATE sessions SET riepilogo = ? WHERE id = ?", (riepilogo_text, session_id))
+    conn.execute(_adapt("UPDATE sessions SET riepilogo = ? WHERE id = ?"), (riepilogo_text, session_id))
     conn.commit()
     conn.close()
 
@@ -297,7 +381,7 @@ def get_all_sessions(user_id: int | None = None) -> list[dict]:
     conn = _get_conn()
     if user_id:
         rows = conn.execute(
-            "SELECT id, topic, level, created_at, riepilogo FROM sessions WHERE user_id = ? ORDER BY created_at DESC",
+            _adapt("SELECT id, topic, level, created_at, riepilogo FROM sessions WHERE user_id = ? ORDER BY created_at DESC"),
             (user_id,),
         ).fetchall()
     else:
@@ -311,8 +395,8 @@ def get_all_sessions(user_id: int | None = None) -> list[dict]:
 def get_session_modules(session_id: int) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT id, module_index, titolo, spiegazione, esercizio, completed, archived "
-        "FROM modules WHERE session_id = ? ORDER BY module_index",
+        _adapt("SELECT id, module_index, titolo, spiegazione, esercizio, completed, archived "
+               "FROM modules WHERE session_id = ? ORDER BY module_index"),
         (session_id,),
     ).fetchall()
     conn.close()
@@ -322,7 +406,7 @@ def get_session_modules(session_id: int) -> list[dict]:
 def get_module_attempts(module_db_id: int) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT soluzione, esito, feedback_json, created_at FROM attempts WHERE module_id = ? ORDER BY created_at",
+        _adapt("SELECT soluzione, esito, feedback_json, created_at FROM attempts WHERE module_id = ? ORDER BY created_at"),
         (module_db_id,),
     ).fetchall()
     conn.close()
