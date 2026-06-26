@@ -84,3 +84,33 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
   - `streamlit_app.py`: Recuperato e validato (integro).
   
 - **Lezione appresa:** Quando si ripristina da git dopo edits corrotti, verificare che tutte le dipendenze siano importate correttamente e che il file abbia la struttura prevista.
+
+---
+
+## [26 Giugno 2026] - Refactoring storico, login multi-utente e UI cards
+- **Errore:** La sezione storico utilizzava colonne affiancate con bottoni grandi, poco adatti alla sidebar.
+  - **Soluzione:** Sostituiti con lista Markdown compatta + badge pills e piccolo pulsante ▶ per apertura.
+
+- **Errore:** Il badge pill si sovrapponeva al pulsante ▶ in sidebar.
+  - **Soluzione:** Badge spostato inline con il titolo nella stessa colonna, eliminata colonna separata.
+
+- **Errore:** Dopo risposta corretta in modulo archiviato, l'utente veniva reindirizzato alla pagina iniziale (`modulo_archivio_aperto = None` + `rerun`).
+  - **Soluzione:** Rimosso redirect. Ora l'utente resta sul modulo e vede "Risposta corretta!" come nel percorso attivo.
+
+- **Errore:** La UI dei moduli archiviati era diversa da quella dei moduli attivi (mono-colonna, feedback non persistente).
+  - **Soluzione:** Allineato layout a due colonne, feedback e hint ora persistenti in `session_state`.
+
+- **Errore:** Streamlit si bloccava dopo il timeout del tool Bash.
+  - **Soluzione:** Lanciato Streamlit come processo background detached con `Start-Process -WindowStyle Hidden`.
+
+- **Feature:** Aggiunta autenticazione multi-utente (login/registrazione) per storico personale.
+  - **Dettagli:** Tabella `users` in SQLite, password hashata con salt, filtro sessioni per `user_id`.
+
+- **Feature:** Condivisione pubblica via ngrok con tunnel HTTPS.
+  - **Dettagli:** Installato ngrok v3.39.8, autenticato con token, tunnel su porta 8501.
+
+- **Feature:** Barra di avanzamento (gamification) sotto obiettivo di apprendimento.
+- **Feature:** Effetto card con gradienti e bordi per colonne spiegazione/esercizio.
+- **Feature:** Badge pills colorati per stato moduli (Fatto/Arch./Aperto).
+- **Feature:** Syntax highlighting per blocchi di codice (```python```).
+- **Feature:** Le risposte corrette dei moduli archiviati sono ora persistenti e ricaricate alla riapertura.

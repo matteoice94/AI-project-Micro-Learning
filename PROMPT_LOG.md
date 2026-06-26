@@ -105,3 +105,34 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Azione:** Ripristino e validazione di `streamlit_app.py` da git (file corrotto durante edit manuale).
   - **Obiettivo:** Recuperare struttura integra con tutte le importazioni (`streamlit`, `src.generator`, `src.database`).
   - **Risultato:** Streamlit app completamente funzionante con storico sessioni, gestione moduli e riapertura moduli archiviati.
+
+---
+
+## [26 Giugno 2026] - Refactoring storico, login multi-utente e UI cards
+- **Azione:** Refactoring completo della sezione "Storico Percorsi" nella sidebar: sostituiti bottoni con lista Markdown compatta, badge pills colorati e pulsante ▶ per aprire moduli.
+  - **Obiettivo:** Ottimizzare storico per spazi stretti (sidebar).
+  - **Risultato:** Lista moduli con emoji stato, badge `Fatto`/`Arch.`/`Aperto` e navigazione inline.
+
+- **Azione:** Aggiunta gestione sessioni (rinomina ✏️ ed elimina 🗑️) e gestione moduli (cambio stato, rinomina, elimina) all'interno dello storico.
+  - **Obiettivo:** Dare all'utente il controllo completo sui propri percorsi.
+  - **Risultato:** Sessioni e moduli modificabili direttamente dalla sidebar.
+
+- **Azione:** Aggiunta barra di avanzamento `st.progress()` sotto l'obiettivo di apprendimento.
+  - **Obiettivo:** Mostrare visivamente il progresso (X/Y moduli completati).
+  - **Risultato:** Feedback visivo immediato sull'avanzamento nel percorso.
+
+- **Azione:** Implementato effetto card con gradient, bordo semitrasparente e border-radius per colonne spiegazione/esercizio. Aggiunti badge pills colorati con CSS. Attivato syntax highlighting per blocchi di codice tramite `st.markdown()`.
+  - **Obiettivo:** Migliorare leggibilità e impatto visivo dell'interfaccia.
+  - **Risultato:** UI più moderna, codice evidenziato nel tema scuro, badge stato colorati.
+
+- **Azione:** Allineata UI dei moduli storico a quella dei moduli attivi: layout a due colonne, feedback persistente in `session_state`, hint persistente.
+  - **Obiettivo:** UX coerente tra moduli archiviati e correnti.
+  - **Risultato:** Stessa esperienza di navigazione e valutazione in entrambi i contesti.
+
+- **Azione:** Le risposte corrette dei moduli archiviati vengono ora salvate e pre-caricate nella textarea alla riapertura del modulo.
+  - **Obiettivo:** Permettere all'utente di rileggere le proprie soluzioni passate.
+  - **Risultato:** Textarea pre-compilata con l'ultima risposta corretta dal DB o da `risposte_utente`.
+
+- **Azione:** Implementato sistema di autenticazione multi-utente: tabella `users` in SQLite, schermata di login/registrazione all'avvio, storico filtrato per `user_id`.
+  - **Obiettivo:** Ogni utente ha il proprio storico personale (condivisione via ngrok sicura).
+  - **Risultato:** Login con username/password (hashata), registrazione, logout. Sessioni filtrate per utente.

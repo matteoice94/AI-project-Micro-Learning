@@ -14,9 +14,15 @@ from src.generator import (
 )
 from src.database import (
     init_db,
+    create_user,
+    authenticate_user,
     save_session,
     save_attempt,
     update_module_state,
+    rename_module,
+    delete_module,
+    rename_session,
+    delete_session,
     save_riepilogo,
     get_all_sessions,
     get_session_modules,
@@ -103,6 +109,87 @@ st.markdown("""
     h1, h2, h3, h4, h5, h6 {
         color: #FFFFFF !important;
     }
+    
+    /* ── 1. Card effetto schede ── */
+    .main [data-testid="column"] {
+        background: linear-gradient(145deg, #141e30, #1a2332);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 20px;
+        transition: border-color 0.2s ease;
+    }
+    .main [data-testid="column"]:hover {
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    /* ── 2. Badge pills per stato ── */
+    .badge {
+        display: inline-block;
+        padding: 0 10px;
+        border-radius: 20px;
+        font-size: 0.7em;
+        font-weight: 700;
+        line-height: 1.8;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+    }
+    .badge.badge-completato {
+        background: rgba(76, 175, 80, 0.2);
+        color: #81C784;
+        border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+    .badge.badge-archiviato {
+        background: rgba(33, 150, 243, 0.2);
+        color: #64B5F6;
+        border: 1px solid rgba(33, 150, 243, 0.3);
+    }
+    .badge.badge-sospeso {
+        background: rgba(255, 152, 0, 0.2);
+        color: #FFB74D;
+        border: 1px solid rgba(255, 152, 0, 0.3);
+    }
+    
+    /* ── 3. Syntax highlighting per codice ── */
+    code {
+        background: #0d1f3c !important;
+        color: #e0e0e0 !important;
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 0.9em;
+    }
+    pre {
+        background: #0a1628 !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 16px !important;
+        overflow-x: auto;
+    }
+    pre code {
+        background: none !important;
+        padding: 0 !important;
+        border: none !important;
+    }
+    
+    /* ── 4. Altezza uniforme colonne ── */
+    .main [data-testid="column"] > div {
+        height: 100%;
+    }
+    
+    /* ── Login card ── */
+    div.login-card {
+        background: linear-gradient(145deg, #141e30, #1a2332);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 40px 32px;
+        text-align: center;
+    }
+    div.login-card h1 {
+        margin-bottom: 4px;
+    }
+    div.login-card p.sub {
+        color: rgba(255, 255, 255, 0.5);
+        margin-bottom: 24px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,6 +227,8 @@ if "module_db_ids" not in st.session_state:
     st.session_state.module_db_ids = {}
 if "show_history" not in st.session_state:
     st.session_state.show_history = False
+if "user" not in st.session_state:
+    st.session_state.user = None
 
 # ── migrazione archiviati vecchi ───────────────────────────
 if st.session_state.moduli_archiviati:
@@ -168,12 +257,68 @@ def _reset_current_path():
     st.session_state.module_db_ids = {}
 
 
+# ── Login ──────────────────────────────────────────────────
+if not st.session_state.user:
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { display: none !important; }
+        .main .block-container { display: flex; justify-content: center; align-items: center; min-height: 90vh; }
+    </style>
+    """, unsafe_allow_html=True)
+    _, col_login, _ = st.columns([1, 1.5, 1])
+    with col_login:
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+        st.markdown("### 🤖 MLPG Tutor")
+        st.markdown('<p class="sub">Accedi per continuare</p>', unsafe_allow_html=True)
+        tab = st.radio("", ["Accedi", "Registrati"], horizontal=True, label_visibility="collapsed")
+        if tab == "Accedi":
+            username = st.text_input("👤 Username", key="login_user")
+            password = st.text_input("🔑 Password", type="password", key="login_pass")
+            if st.button("🚀 Accedi", use_container_width=True, type="primary"):
+                user = authenticate_user(username, password)
+                if user:
+                    st.session_state.user = user
+                    st.rerun()
+                else:
+                    st.error("❌ Username o password errati")
+        else:
+            reg_user = st.text_input("👤 Username", key="reg_user")
+            reg_pass = st.text_input("🔑 Password", type="password", key="reg_pass")
+            reg_confirm = st.text_input("🔑 Conferma password", type="password", key="reg_confirm")
+            if st.button("📝 Registrati", use_container_width=True, type="primary"):
+                if not reg_user or not reg_pass:
+                    st.error("❌ Compila tutti i campi")
+                elif reg_pass != reg_confirm:
+                    st.error("❌ Le password non coincidono")
+                elif len(reg_pass) < 4:
+                    st.error("❌ Password troppo corta (min 4 caratteri)")
+                else:
+                    uid = create_user(reg_user, reg_pass)
+                    if uid:
+                        st.session_state.user = {"id": uid, "username": reg_user}
+                        st.rerun()
+                    else:
+                        st.error("❌ Username già esistente")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+# ── Logout in sidebar ─────────────────────────────────────
+
 # ── Header ─────────────────────────────────────────────────
 st.title("🤖 MLPG Tutor con Streamlit")
 st.markdown("✨ Genera un percorso personalizzato, valuta le tue soluzioni e chiedi chiarimenti mirati.")
 
 # ── Sidebar ────────────────────────────────────────────────
 with st.sidebar:
+    col_user, col_logout = st.columns([2, 1])
+    with col_user:
+        st.caption(f"👤 {st.session_state.user['username']}")
+    with col_logout:
+        if st.button("🚪", key="logout_btn"):
+            st.session_state.user = None
+            st.session_state.response = None
+            st.session_state.modulo_archivio_aperto = None
+            st.rerun()
     st.header("⚙️ Configurazione")
     topic = st.text_input("🎯 Argomento", key="topic", placeholder="Es: Python, Matematica, etc.")
     level = st.selectbox("📊 Livello", ["", "base", "intermedio", "avanzato"], key="level")
@@ -207,7 +352,7 @@ with st.sidebar:
 
                     # salva su DB
                     mods = st.session_state.response.percorso_studio.moduli
-                    sid = save_session(topic, level, [m.model_dump() for m in mods])
+                    sid = save_session(topic, level, [m.model_dump() for m in mods], st.session_state.user["id"])
                     st.session_state.current_session_id = sid
 
                     # mappa id_modulo -> db_id
@@ -222,49 +367,132 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # ── Storico nella sidebar ──────────────────────────────
+    # ── Storico nella sidebar (compatto con gestione) ─────
     with st.expander("📜 Storico Percorsi", expanded=False):
-        sessions = get_all_sessions()
+        sessions = get_all_sessions(st.session_state.user["id"])
         if not sessions:
             st.info("📭 Ancora nessun percorso salvato.")
         else:
             for sess in sessions:
+                sess_key_base = f"s_{sess['id']}"
                 with st.expander(
                     f"📚 {sess['topic']} ({sess['level']}) — {sess['created_at'][:10]}",
                     expanded=False
                 ):
                     st.caption(f"📅 Creato il {sess['created_at'][:19]}")
-                    if sess["riepilogo"]:
-                        st.markdown("**📝 Riepilogo:**")
-                        st.write(sess["riepilogo"][:250])
                     
-                    mods = get_session_modules(sess["id"])
-                    st.markdown("**Moduli:**")
-                    for m in mods:
-                        stato_icon = "✅" if m["completed"] else "📦" if m["archived"] else "⏳"
-                        stato = "completato" if m["completed"] else "archiviato" if m["archived"] else "in sospeso"
-                        col_mod, col_stato = st.columns([3, 1])
-                        with col_mod:
-                            if st.button(f"🔹 {m['titolo']}", key=f"hist_mod_{m['id']}", use_container_width=True):
-                                st.session_state.modulo_archivio_aperto = {
-                                    "id": str(m["id"]),
-                                    "topic": sess["topic"],
-                                    "livello": sess["level"],
-                                    "titolo": m["titolo"],
-                                    "spiegazione": m["spiegazione"],
-                                    "esercizio": m["esercizio"],
-                                    "ultima_soluzione": "",
-                                }
-                                st.session_state.hint_corrente = None
+                    # ── Riga controllo sessione ──
+                    col_r, col_d = st.columns([1, 1])
+                    with col_r:
+                        rp = st.popover("✏️ Rinomina", key=f"rn_sess_{sess_key_base}")
+                        with rp:
+                            nuovo_nome = st.text_input(
+                                "Nuovo nome", value=sess["topic"],
+                                key=f"rni_sess_{sess_key_base}"
+                            )
+                            if st.button("💾 Salva", key=f"rns_sess_{sess_key_base}"):
+                                rename_session(sess["id"], nuovo_nome)
                                 st.rerun()
-                        with col_stato:
-                            st.caption(f"{stato_icon} {stato}")
+                    with col_d:
+                        if st.button("🗑️ Elimina", key=f"del_sess_{sess_key_base}"):
+                            delete_session(sess["id"])
+                            st.rerun()
+                    
+                    if sess["riepilogo"]:
+                        st.caption(f"📝 {sess['riepilogo'][:120]}…" if len(sess["riepilogo"]) > 120 else f"📝 {sess['riepilogo']}")
+                    
+                    # ── Lista moduli (apribili) ──
+                    mods = get_session_modules(sess["id"])
+                    if mods:
+                        st.markdown("**Moduli:**")
+                        for m in mods:
+                            stato_icon = "✅" if m["completed"] else "📦" if m["archived"] else "⏳"
+                            badge_cls = "completato" if m["completed"] else "archiviato" if m["archived"] else "sospeso"
+                            badge_txt = "Fatto" if m["completed"] else "Arch." if m["archived"] else "Aperto"
+                            col_i, col_t, col_a = st.columns([0.3, 2.6, 0.6])
+                            with col_i:
+                                st.markdown(stato_icon)
+                            with col_t:
+                                st.markdown(
+                                    f"{m['titolo'][:25]} <span class='badge badge-{badge_cls}'>{badge_txt}</span>",
+                                    unsafe_allow_html=True,
+                                )
+                            with col_a:
+                                if st.button("▶", key=f"apri_mod_{sess_key_base}_{m['id']}"):
+                                    st.session_state.modulo_archivio_aperto = {
+                                        "id": str(m["id"]),
+                                        "session_id": sess["id"],
+                                        "topic": sess["topic"],
+                                        "livello": sess["level"],
+                                        "titolo": m["titolo"],
+                                        "spiegazione": m["spiegazione"],
+                                        "esercizio": m["esercizio"],
+                                        "ultima_soluzione": "",
+                                    }
+                                    st.session_state.hint_corrente = None
+                                    st.rerun()
                         
-                        attempts = get_module_attempts(m["id"])
+                        # ── Gestione moduli ──
+                        st.markdown("---")
+                        st.markdown("**🔧 Gestione Moduli**")
+                        opts = {
+                            f"Modulo {m['module_index']+1}: {m['titolo'][:35]}": m
+                            for m in mods
+                        }
+                        sel_label = st.selectbox(
+                            "Seleziona modulo",
+                            list(opts.keys()),
+                            key=f"sel_mod_{sess_key_base}",
+                            label_visibility="collapsed",
+                        )
+                        sel_mod = opts[sel_label]
+                        
+                        cur_stato = (
+                            "completato" if sel_mod["completed"]
+                            else "archiviato" if sel_mod["archived"]
+                            else "in sospeso"
+                        )
+                        nuovo_stato = st.selectbox(
+                            "Stato",
+                            ["in sospeso", "completato"],
+                            index=0 if cur_stato == "in sospeso" else 1,
+                            key=f"st_mod_{sess_key_base}_{sel_mod['id']}",
+                        )
+                        if nuovo_stato != cur_stato:
+                            update_module_state(
+                                sel_mod["id"],
+                                completed=(nuovo_stato == "completato"),
+                                archived=False,
+                            )
+                            st.rerun()
+                        
+                        col_ren, col_del_m = st.columns([1, 1])
+                        with col_ren:
+                            rp_m = st.popover("✏️ Rinomina modulo", key=f"rn_mod_{sess_key_base}_{sel_mod['id']}")
+                            with rp_m:
+                                nuovo_titolo = st.text_input(
+                                    "Titolo", value=sel_mod["titolo"],
+                                    key=f"rni_mod_{sess_key_base}_{sel_mod['id']}",
+                                )
+                                if st.button("💾", key=f"rns_mod_{sess_key_base}_{sel_mod['id']}"):
+                                    rename_module(sel_mod["id"], nuovo_titolo)
+                                    st.rerun()
+                        with col_del_m:
+                            if st.button("🗑️ Elimina modulo", key=f"del_mod_{sess_key_base}_{sel_mod['id']}"):
+                                delete_module(sel_mod["id"])
+                                st.rerun()
+                        
+                        # ── Tentativi del modulo selezionato ──
+                        attempts = get_module_attempts(sel_mod["id"])
                         if attempts:
-                            for att in attempts[-1:]:
-                                esito_icon = "✅" if att["esito"] == "corretta" else "⚠️" if att["esito"] == "parziale" else "❌"
-                                st.caption(f"  {esito_icon} {att['created_at'][:16]}")
+                            with st.expander("📋 Tentativi", expanded=False):
+                                for att in attempts[-3:]:
+                                    esito_icon = (
+                                        "✅" if att["esito"] == "corretta"
+                                        else "⚠️" if att["esito"] == "parziale"
+                                        else "❌"
+                                    )
+                                    st.caption(f"{esito_icon} {att['created_at'][:16]}")
 
     st.markdown("---")
     
@@ -280,42 +508,97 @@ with st.sidebar:
                 st.session_state.hint_corrente = None
                 st.rerun()
 
-# ── vista modulo archiviato ────────────────────────────────
+# ── vista modulo storico ───────────────────────────────────
 if st.session_state.modulo_archivio_aperto:
     arch = st.session_state.modulo_archivio_aperto
 
-    col_titolo, col_torna = st.columns([3, 1])
-    with col_titolo:
-        st.markdown(f"### 📖 {arch.get('titolo', 'Modulo')}")
-    with col_torna:
+    # ── Navigazione tra moduli della stessa sessione ──
+    session_id = arch.get("session_id")
+    mods_in_session = get_session_modules(session_id) if session_id else []
+    current_mod_id = int(arch["id"])
+    current_idx = next(
+        (i for i, m in enumerate(mods_in_session) if m["id"] == current_mod_id),
+        -1,
+    )
+
+    col_back, col_nav, col_next = st.columns([1, 2, 1])
+    with col_back:
         if st.button("⬅️ Torna", use_container_width=True):
             st.session_state.modulo_archivio_aperto = None
             st.rerun()
+    with col_nav:
+        if session_id and current_idx >= 0:
+            st.markdown(
+                f"<div style='text-align:center'>📚 <strong>{arch.get('topic', '')}</strong> — "
+                f"Modulo {current_idx+1}/{len(mods_in_session)}</div>",
+                unsafe_allow_html=True,
+            )
+    with col_next:
+        if session_id and current_idx < len(mods_in_session) - 1:
+            if st.button("▶ Successivo", use_container_width=True):
+                m = mods_in_session[current_idx + 1]
+                st.session_state.modulo_archivio_aperto = {
+                    "id": str(m["id"]),
+                    "session_id": session_id,
+                    "topic": arch["topic"],
+                    "livello": arch["livello"],
+                    "titolo": m["titolo"],
+                    "spiegazione": m["spiegazione"],
+                    "esercizio": m["esercizio"],
+                    "ultima_soluzione": "",
+                }
+                st.session_state.hint_corrente = None
+                st.rerun()
 
     if arch.get("topic"):
-        st.info(f"📚 **Argomento originale:** {arch['topic']}")
+        st.info(f"📚 **Argomento:** {arch['topic']} ({arch.get('livello', '')})")
     
-    st.markdown("#### Spiegazione")
-    st.write(arch.get("spiegazione", ""))
-    
-    st.markdown("#### Esercizio")
-    st.write(arch.get("esercizio", ""))
+    st.markdown(f"#### 📖 {arch.get('titolo', 'Modulo')}")
 
-    solution = st.text_area("💭 La tua soluzione", key="soluzione_archivio", height=120)
-    if st.button("✅ Valuta soluzione", key="valuta_archivio", use_container_width=True):
+    # ── Recupera risposta già data ──
+    existing_answer = ""
+    mod_completato = False
+    if arch["id"] in st.session_state.risposte_utente:
+        existing_answer = st.session_state.risposte_utente[arch["id"]]["soluzione"]
+        mod_completato = True
+    else:
+        tentativi = get_module_attempts(int(arch["id"]))
+        for att in reversed(tentativi):
+            if att["esito"] == "corretta":
+                existing_answer = att["soluzione"]
+                mod_completato = True
+                st.session_state.risposte_utente[arch["id"]] = {
+                    "esercizio": arch["esercizio"],
+                    "soluzione": existing_answer,
+                }
+                break
+
+    if mod_completato:
+        st.success("✅ Modulo già completato — ecco la tua risposta")
+
+    col_spiega, col_esercizio = st.columns([1, 1])
+    with col_spiega:
+        st.markdown("**Spiegazione:**")
+        st.markdown(arch.get("spiegazione", ""))
+    with col_esercizio:
+        st.markdown("**Esercizio:**")
+        st.markdown(arch.get("esercizio", ""))
+
+    st.markdown("---")
+
+    solution = st.text_area("💭 La tua soluzione", value=existing_answer, key=f"soluzione_arch_{arch['id']}", height=150)
+    if st.button("✅ Valuta soluzione", key=f"valuta_arch_{arch['id']}", use_container_width=True, type="primary"):
         if not solution:
             st.error("❌ Inserisci una soluzione prima di valutare.")
         else:
             try:
                 with st.spinner("⏳ Valutazione in corso..."):
                     feedback = valuta_risposta(arch["esercizio"], solution)
+                st.session_state.feedbacks[arch["id"]] = feedback
+
                 if feedback.esito in ("sbagliata", "parziale"):
                     hint = genera_hint(arch["esercizio"], solution, arch.get("livello", "base"), 1)
-                    st.warning(f"⚠️ **Suggerimento:** {hint}")
-                    st.markdown("**💡 Commento costruttivo:**")
-                    st.write(feedback.commento_costruttivo)
-                    st.markdown("**🎯 Suggerimento di miglioramento:**")
-                    st.write(feedback.suggerimento_miglioramento)
+                    st.session_state.hint_corrente = hint
                 else:
                     st.session_state.moduli_archiviati = [
                         a for a in st.session_state.moduli_archiviati
@@ -326,23 +609,39 @@ if st.session_state.modulo_archivio_aperto:
                             "esercizio": arch["esercizio"],
                             "soluzione": solution,
                         }
-                    # salva tentativo e aggiorna DB per moduli dello storico
                     try:
                         db_id = int(arch["id"])
                         save_attempt(db_id, solution, "corretta", feedback.model_dump_json())
                         update_module_state(db_id, completed=True)
                     except (ValueError, Exception):
                         pass
-                    st.session_state.modulo_archivio_aperto = None
-                    st.success("🎉 Modulo completato con successo!")
-                    st.rerun()
+                    st.success("🎉 Risposta corretta!")
             except Exception as exc:
                 st.error(f"❌ Errore nella valutazione: {exc}")
 
+    # ── Feedback persistente ──
+    if arch["id"] in st.session_state.feedbacks:
+        feedback = st.session_state.feedbacks[arch["id"]]
+        st.markdown("---")
+        col_comment, col_suggest = st.columns(2)
+        with col_comment:
+            st.markdown("**💡 Commento costruttivo:**")
+            st.write(feedback.commento_costruttivo)
+        with col_suggest:
+            st.markdown("**🎯 Suggerimento di miglioramento:**")
+            st.write(feedback.suggerimento_miglioramento)
+
+    # ── Hint persistente ──
+    if st.session_state.hint_corrente and arch["id"] in st.session_state.feedbacks:
+        fb_esito = st.session_state.feedbacks[arch["id"]].esito
+        if fb_esito in ("sbagliata", "parziale"):
+            st.markdown("---")
+            st.warning(f"💡 **Suggerimento:** {st.session_state.hint_corrente}")
+
     st.markdown("---")
     st.markdown("#### 🤔 Chiedi chiarimenti mirati")
-    dubbio = st.text_area("Quale parte non ti è chiara?", key="dubbio_archivio", height=100)
-    if st.button("💬 Genera spiegazione mirata", key="clarify_archivio", use_container_width=True):
+    dubbio = st.text_area("Quale parte non ti è chiara?", key=f"dubbio_arch_{arch['id']}", height=100)
+    if st.button("💬 Genera spiegazione mirata", key=f"clarify_arch_{arch['id']}", use_container_width=True):
         if not dubbio:
             st.error("❌ Inserisci il dubbio specifico prima di procedere.")
         else:
@@ -363,9 +662,11 @@ if st.session_state.modulo_archivio_aperto:
             except Exception as exc:
                 st.error(f"❌ Errore nella generazione dei chiarimenti: {exc}")
 
-    if st.button("⬅️ Torna al percorso corrente", key="torna_archivio_bottom", use_container_width=True):
-        st.session_state.modulo_archivio_aperto = None
-        st.rerun()
+    col_torna_bottom, _ = st.columns([1, 1])
+    with col_torna_bottom:
+        if st.button("⬅️ Torna", key=f"torna_arch_{arch['id']}", use_container_width=True):
+            st.session_state.modulo_archivio_aperto = None
+            st.rerun()
 
 # ── percorso attuale ───────────────────────────────────────
 elif st.session_state.response:
@@ -379,6 +680,13 @@ elif st.session_state.response:
     # ── Obiettivo di apprendimento ──────────────────────────
     st.markdown("### 🎯 Obiettivo di apprendimento")
     st.info(objective)
+
+    # ── Barra di avanzamento ──────────────────────────────
+    totali = len(modules)
+    completati = len(st.session_state.risposte_utente)
+    if totali > 0:
+        st.progress(completati / totali)
+        st.caption(f"📊 {completati}/{totali} moduli completati")
 
     st.markdown("---")
     
@@ -399,11 +707,11 @@ elif st.session_state.response:
     
     with col_spiega:
         st.markdown("**Spiegazione:**")
-        st.write(module.spiegazione)
+        st.markdown(module.spiegazione)
     
     with col_esercizio:
         st.markdown("**Esercizio:**")
-        st.write(module.esercizio_pratico)
+        st.markdown(module.esercizio_pratico)
 
     st.markdown("---")
     

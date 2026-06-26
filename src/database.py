@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import hashlib
 import logging
 import sqlite3
 import urllib.request
@@ -9,6 +10,8 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from .config import OPENROUTER_EMBED_URL, EMBED_MODEL, EMBED_TIMEOUT, RAG_TOP_K, RAG_SIMILARITY_THRESHOLD
+
+AUTH_SALT = "mlpg_salt_2026_xyz"
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +40,16 @@ def _get_conn():
 def init_db():
     conn = _get_conn()
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
             topic TEXT NOT NULL,
             level TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -71,6 +82,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
         CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
     """)
+    # Migrazione: aggiungi user_id a sessions se manca (DB pre-esistenti)
+    cursor = conn.execute("PRAGMA table_info(sessions)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if "user_id" not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id)")
     conn.commit()
     conn.close()
 
@@ -117,15 +133,61 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+# ── autenticazione ──────────────────────────────────────────
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256((password + AUTH_SALT).encode()).hexdigest()
+
+
+def create_user(username: str, password: str) -> int | None:
+    logger.info("Creazione utente: username=%s", username)
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    hashed = _hash_password(password)
+    try:
+        cur = conn.execute(
+            "INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)",
+            (username, hashed, now),
+        )
+        conn.commit()
+        uid = cur.lastrowid
+        conn.close()
+        return uid
+    except sqlite3.IntegrityError:
+        logger.warning("Username già esistente: %s", username)
+        conn.close()
+        return None
+
+
+def authenticate_user(username: str, password: str) -> dict | None:
+    conn = _get_conn()
+    hashed = _hash_password(password)
+    row = conn.execute(
+        "SELECT id, username FROM users WHERE username = ? AND password = ?",
+        (username, hashed),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT id, username FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 # ── salvataggio ────────────────────────────────────────────
 
-def save_session(topic: str, level: str, modules_data: list[dict]) -> int:
+def save_session(topic: str, level: str, modules_data: list[dict], user_id: int | None = None) -> int:
     logger.info("Salvataggio sessione: topic=%s, level=%s, moduli=%d", topic, level, len(modules_data))
     conn = _get_conn()
     now = datetime.now().isoformat()
     cur = conn.execute(
-        "INSERT INTO sessions (topic, level, created_at) VALUES (?, ?, ?)",
-        (topic, level, now),
+        "INSERT INTO sessions (topic, level, created_at, user_id) VALUES (?, ?, ?, ?)",
+        (topic, level, now, user_id),
     )
     session_id = cur.lastrowid
 
@@ -201,6 +263,27 @@ def delete_module(module_db_id: int):
     conn.close()
 
 
+def rename_session(session_id: int, new_topic: str):
+    logger.info("Rinomina sessione: id=%s, nuovo_topic=%s", session_id, new_topic)
+    conn = _get_conn()
+    conn.execute("UPDATE sessions SET topic = ? WHERE id = ?", (new_topic, session_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_session(session_id: int):
+    logger.info("Elimina sessione: id=%s", session_id)
+    conn = _get_conn()
+    conn.execute(
+        "DELETE FROM attempts WHERE module_id IN (SELECT id FROM modules WHERE session_id = ?)",
+        (session_id,),
+    )
+    conn.execute("DELETE FROM modules WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+
 def save_riepilogo(session_id: int, riepilogo_text: str):
     conn = _get_conn()
     conn.execute("UPDATE sessions SET riepilogo = ? WHERE id = ?", (riepilogo_text, session_id))
@@ -210,11 +293,17 @@ def save_riepilogo(session_id: int, riepilogo_text: str):
 
 # ── lettura storico ────────────────────────────────────────
 
-def get_all_sessions() -> list[dict]:
+def get_all_sessions(user_id: int | None = None) -> list[dict]:
     conn = _get_conn()
-    rows = conn.execute(
-        "SELECT id, topic, level, created_at, riepilogo FROM sessions ORDER BY created_at DESC"
-    ).fetchall()
+    if user_id:
+        rows = conn.execute(
+            "SELECT id, topic, level, created_at, riepilogo FROM sessions WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, topic, level, created_at, riepilogo FROM sessions ORDER BY created_at DESC"
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
