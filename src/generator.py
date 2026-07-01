@@ -174,16 +174,17 @@ def valida_input_euristico(esercizio: str, risposta_utente: str):
 
     risposta_lower = risposta.lower().strip("?.! ")
 
-    nonsense_patterns = [
+    encouragement_patterns = [
         "non lo so", "non saprei", "boh", "niente", "non capisco",
         "idk", "non ne ho idea", "non so", "???", "...", "....",
         "non ho capito", "mi arrendo", "ni", "meh", "forse",
     ]
-    for pattern in nonsense_patterns:
+    for pattern in encouragement_patterns:
         if risposta_lower == pattern:
-            return False, (
-                "Sembra che tu non abbia provato a rispondere. "
-                "Usa il pulsante 'Chiedi chiarimenti' se hai bisogno di aiuto."
+            return True, (
+                "Non preoccuparti se non sai la risposta! "
+                "Usa il pulsante 'Chiedi chiarimenti' per ricevere un aiuto mirato. "
+                "Sono qui per supportarti! 💪"
             )
 
     words = risposta.split()
@@ -332,7 +333,7 @@ REGOLE:
 - `commento_costruttivo` e `suggerimento_miglioramento` devono essere DIVERSI tra loro per stile e contenuto: il primo elogia e motiva, il secondo indica un passo successivo concreto.
 - Se la risposta dell'utente è sostanzialmente corretta, imposta `esito` a "corretta" e fornisci almeno 2 voci in `punti_di_forza` e 1-2 in `punti_migliorabili`.
 - Se la risposta è parzialmente corretta o manca di dettagli, imposta `esito` a "parziale".
-- Se la risposta è "non lo so", completamente sbagliata o molto imprecisa, imposta `esito` a "sbagliata", lascia `punti_di_forza` vuoto e concentra il feedback su `punti_migliorabili`.
+- Se la risposta esprime difficoltà (es. "non lo so", "non capisco", "mi arrendo"): non scoraggiare mai l'utente. Imposta `esito` a "parziale", elogia l'onestà e il coraggio di ammettere una difficoltà in `commento_costruttivo`, e in `suggerimento_miglioramento` invita calorosamente a usare il pulsante "Chiedi chiarimenti" per ricevere un aiuto personalizzato. In `punti_migliorabili` indica 1-2 aree su cui l'esercizio verte, così l'utente sa su cosa concentrarsi.
 - Se la risposta è totalmente fuori tema, senza senso, composta da caratteri casuali (keyboard smashing), barzellette, testi copia-incolla non attinenti o non dimostra alcuno sforzo di affrontare l'esercizio: imposta `esito` a "sbagliata", lascia `punti_di_forza` vuoto, e usa `commento_costruttivo` per spiegare gentilmente che la risposta non è pertinente, invitando l'utente a rileggere l'esercizio e riprovare con un approccio più focalizzato. Il `suggerimento_miglioramento` deve indicare un'azione concreta per rimettersi in carreggiata.
 - Se la risposta non ha alcuna attinenza con l'esercizio, non cercare punti di forza forzatamente: `punti_di_forza` deve essere una lista vuota.
 - `punti_di_forza` deve essere analitico, sintetico e non ripetere il `commento_costruttivo`.
