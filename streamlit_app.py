@@ -11,6 +11,8 @@ from src.generator import (
     genera_spiegazione_alternativa,
     genera_riepilogo_finale,
     genera_hint,
+    valida_input_euristico,
+    sanity_check_risposta,
 )
 from src.database import (
     init_db,
@@ -720,64 +722,80 @@ elif st.session_state.response:
         if not solution:
             st.error("❌ Inserisci una soluzione prima di valutare.")
         else:
-            try:
-                with st.spinner("⏳ Valutazione in corso..."):
-                    feedback = valuta_risposta(module.esercizio_pratico, solution)
-                st.session_state.feedbacks[module.id] = feedback
-
-                if feedback.esito in ("sbagliata", "parziale"):
-                    ultima = st.session_state.ultima_risposta_modulo.get(id_modulo)
-                    if ultima is not None and ultima == solution:
-                        st.warning("⚠️ Hai inviato la stessa risposta. Rileggi l'hint qui sotto e riprova con un approccio diverso.")
+            # Opzione A — Filtro euristico (gratuito, immediato)
+            valido_eur, motivo_eur = valida_input_euristico(module.esercizio_pratico, solution)
+            if not valido_eur:
+                st.warning(f"⚠️ {motivo_eur}")
+            else:
+                try:
+                    # Opzione C — Sanity check LLM (leggero)
+                    with st.spinner("🔍 Verifica pertinenza della risposta..."):
+                        pertinente, motivo_sc = sanity_check_risposta(module.esercizio_pratico, solution)
+                    if not pertinente:
+                        st.warning(
+                            f"⚠️ La tua risposta non sembra pertinente all'esercizio"
+                            + (f": {motivo_sc}" if motivo_sc else ".")
+                            + " Riprova con una risposta più mirata."
+                        )
                     else:
-                        tentativi = st.session_state.tentativi_modulo.get(id_modulo, 0) + 1
-                        st.session_state.tentativi_modulo[id_modulo] = tentativi
-                        st.session_state.ultima_risposta_modulo[id_modulo] = solution
+                        # Opzione B — Valutazione completa (prompt arricchito)
+                        with st.spinner("⏳ Valutazione in corso..."):
+                            feedback = valuta_risposta(module.esercizio_pratico, solution)
+                        st.session_state.feedbacks[module.id] = feedback
 
-                        # salva tentativo su DB
-                        db_id = st.session_state.module_db_ids.get(id_modulo)
-                        if db_id:
-                            save_attempt(db_id, solution, feedback.esito, feedback.model_dump_json())
+                        if feedback.esito in ("sbagliata", "parziale"):
+                            ultima = st.session_state.ultima_risposta_modulo.get(id_modulo)
+                            if ultima is not None and ultima == solution:
+                                st.warning("⚠️ Hai inviato la stessa risposta. Rileggi l'hint qui sotto e riprova con un approccio diverso.")
+                            else:
+                                tentativi = st.session_state.tentativi_modulo.get(id_modulo, 0) + 1
+                                st.session_state.tentativi_modulo[id_modulo] = tentativi
+                                st.session_state.ultima_risposta_modulo[id_modulo] = solution
 
-                        if tentativi >= 2:
-                            st.session_state.moduli_archiviati.append({
-                                "id": id_modulo,
-                                "topic": topic,
-                                "livello": livello,
-                                "titolo": module.titolo_modulo,
-                                "spiegazione": module.spiegazione,
-                                "esercizio": module.esercizio_pratico,
-                                "ultima_soluzione": solution,
-                            })
-                            st.session_state.diario_note.append(
-                                f"Modulo {module.id} ({module.titolo_modulo}): archiviato dopo {tentativi} tentativi"
-                            )
-                            if db_id:
-                                update_module_state(db_id, archived=True)
-                            st.warning(f"📦 Modulo archiviato dopo {tentativi} tentativi. Potrai riprovare dalla sezione 'Moduli da Riprendere'.")
-                            st.rerun()
+                                # salva tentativo su DB
+                                db_id = st.session_state.module_db_ids.get(id_modulo)
+                                if db_id:
+                                    save_attempt(db_id, solution, feedback.esito, feedback.model_dump_json())
+
+                                if tentativi >= 2:
+                                    st.session_state.moduli_archiviati.append({
+                                        "id": id_modulo,
+                                        "topic": topic,
+                                        "livello": livello,
+                                        "titolo": module.titolo_modulo,
+                                        "spiegazione": module.spiegazione,
+                                        "esercizio": module.esercizio_pratico,
+                                        "ultima_soluzione": solution,
+                                    })
+                                    st.session_state.diario_note.append(
+                                        f"Modulo {module.id} ({module.titolo_modulo}): archiviato dopo {tentativi} tentativi"
+                                    )
+                                    if db_id:
+                                        update_module_state(db_id, archived=True)
+                                    st.warning(f"📦 Modulo archiviato dopo {tentativi} tentativi. Potrai riprovare dalla sezione 'Moduli da Riprendere'.")
+                                    st.rerun()
+                                else:
+                                    hint = genera_hint(module.esercizio_pratico, solution, livello, tentativi)
+                                    st.session_state.hint_corrente = hint
+
                         else:
-                            hint = genera_hint(module.esercizio_pratico, solution, livello, tentativi)
-                            st.session_state.hint_corrente = hint
+                            # risposta corretta
+                            st.session_state.moduli_archiviati = [
+                                a for a in st.session_state.moduli_archiviati
+                                if not (a["id"] == id_modulo and a.get("topic", "") == (topic or ""))
+                            ]
+                            st.session_state.risposte_utente[id_modulo] = {
+                                "esercizio": module.esercizio_pratico,
+                                "soluzione": solution,
+                            }
+                            db_id = st.session_state.module_db_ids.get(id_modulo)
+                            if db_id:
+                                save_attempt(db_id, solution, "corretta", feedback.model_dump_json())
+                                update_module_state(db_id, completed=True)
+                            st.success("🎉 Risposta corretta!")
 
-                else:
-                    # risposta corretta
-                    st.session_state.moduli_archiviati = [
-                        a for a in st.session_state.moduli_archiviati
-                        if not (a["id"] == id_modulo and a.get("topic", "") == (topic or ""))
-                    ]
-                    st.session_state.risposte_utente[id_modulo] = {
-                        "esercizio": module.esercizio_pratico,
-                        "soluzione": solution,
-                    }
-                    db_id = st.session_state.module_db_ids.get(id_modulo)
-                    if db_id:
-                        save_attempt(db_id, solution, "corretta", feedback.model_dump_json())
-                        update_module_state(db_id, completed=True)
-                    st.success("🎉 Risposta corretta!")
-
-            except Exception as exc:
-                st.error(f"❌ Errore nella valutazione: {exc}")
+                except Exception as exc:
+                    st.error(f"❌ Errore nella valutazione: {exc}")
 
     if module.id in st.session_state.feedbacks:
         feedback = st.session_state.feedbacks[module.id]

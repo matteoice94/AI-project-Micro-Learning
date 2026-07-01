@@ -6,6 +6,8 @@ from src.generator import (
     genera_saluto_finale,
     genera_riepilogo_finale,
     genera_hint,
+    valida_input_euristico,
+    sanity_check_risposta,
 )
 from src.database import (
     init_db,
@@ -65,7 +67,21 @@ def api_evaluate():
     if not esercizio or not soluzione:
         return jsonify({'success': False, 'error': 'Esercizio e soluzione sono obbligatori.'}), 400
 
+    # Opzione A — Filtro euristico (gratuito, immediato)
+    valido, motivo = valida_input_euristico(esercizio, soluzione)
+    if not valido:
+        return jsonify({'success': False, 'error': motivo, 'reason': 'heuristic_invalid'}), 422
+
+    # Opzione C — Sanity check LLM (leggero)
+    pertinente, motivo_sc = sanity_check_risposta(esercizio, soluzione)
+    if not pertinente:
+        msg = "La risposta non sembra pertinente all'esercizio"
+        if motivo_sc:
+            msg += f": {motivo_sc}"
+        return jsonify({'success': False, 'error': msg, 'reason': 'not_pertinent'}), 422
+
     try:
+        # Opzione B — Valutazione completa (prompt arricchito)
         feedback = valuta_risposta(esercizio, soluzione)
         esito = feedback.esito or "sbagliata"
 

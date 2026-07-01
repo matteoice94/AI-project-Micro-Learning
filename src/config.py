@@ -7,6 +7,14 @@ CHAT_TIMEOUT = 60  # secondi per urlopen
 CHAT_TEMPERATURE_DEFAULT = 0.7
 CHAT_TEMPERATURE_HINT = 0.4
 
+# ── Sanity Check (Opzione C) ────────────────────────────────
+ENABLE_SANITY_CHECK = True
+SANITY_CHECK_TEMPERATURE = 0.1
+SANITY_CHECK_TIMEOUT = 20
+
+# ── Heuristic Filter (Opzione A) ───────────────────────────
+ENABLE_HEURISTIC_FILTER = True
+
 # ── Retry ──────────────────────────────────────────────────
 MAX_RETRIES = 3
 WAIT_SECONDS = 30

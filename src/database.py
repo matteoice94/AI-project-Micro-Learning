@@ -25,9 +25,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 IS_PG = bool(DATABASE_URL)
 
 if IS_PG:
-    import psycopg2
-    import psycopg2.extras
-    import psycopg2.errors
+    try:
+        import psycopg2
+        import psycopg2.extras
+        import psycopg2.errors
+    except ImportError:
+        IS_PG = False
 
 
 def _adapt(sql: str) -> str:
@@ -37,17 +40,48 @@ def _adapt(sql: str) -> str:
     return sql
 
 
+class _DB:
+    """Wrapper che unifica sqlite3 e psycopg2 sotto un'unica interfaccia."""
+
+    def __init__(self, conn, backend: str):
+        self._conn = conn
+        self._backend = backend  # 'pg' or 'sqlite'
+
+    def execute(self, sql: str, params=None):
+        cur = self._conn.cursor()
+        if params is not None:
+            cur.execute(sql, params)
+        else:
+            cur.execute(sql)
+        return cur
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        return self._conn.close()
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 def _get_conn():
     if IS_PG:
         conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
         conn.autocommit = False
-        return conn
+        return _DB(conn, "pg")
     DB_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return _DB(conn, "sqlite")
 
 
 def _insert_returning_id(conn, sql: str, params: tuple) -> int:

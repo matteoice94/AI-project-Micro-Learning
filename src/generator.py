@@ -18,6 +18,10 @@ from .config import (
     CHAT_TEMPERATURE_HINT,
     MAX_RETRIES,
     WAIT_SECONDS,
+    ENABLE_SANITY_CHECK,
+    SANITY_CHECK_TEMPERATURE,
+    SANITY_CHECK_TIMEOUT,
+    ENABLE_HEURISTIC_FILTER,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -154,6 +158,119 @@ def _normalize_json_text(response_text: str) -> str:
     return ''.join(normalized_chars)
 
 
+# ─────────────────────────────────────────────────────────────
+# Opzione A — Filtro euristico pre-LLM (nessun costo API)
+# ─────────────────────────────────────────────────────────────
+
+def valida_input_euristico(esercizio: str, risposta_utente: str):
+
+    if not ENABLE_HEURISTIC_FILTER:
+        return True, ""
+
+    risposta = risposta_utente.strip()
+
+    if not risposta or len(risposta) < 3:
+        return False, "La risposta è troppo corta. Prova a scrivere una soluzione più articolata."
+
+    risposta_lower = risposta.lower().strip("?.! ")
+
+    nonsense_patterns = [
+        "non lo so", "non saprei", "boh", "niente", "non capisco",
+        "idk", "non ne ho idea", "non so", "???", "...", "....",
+        "non ho capito", "mi arrendo", "ni", "meh", "forse",
+    ]
+    for pattern in nonsense_patterns:
+        if risposta_lower == pattern:
+            return False, (
+                "Sembra che tu non abbia provato a rispondere. "
+                "Usa il pulsante 'Chiedi chiarimenti' se hai bisogno di aiuto."
+            )
+
+    words = risposta.split()
+    if len(words) >= 4:
+        for i in range(len(words) - 3):
+            if words[i].lower() == words[i+1].lower() == words[i+2].lower() == words[i+3].lower():
+                return False, (
+                    "La risposta contiene parole ripetute. "
+                    "Prova a formulare una soluzione più strutturata."
+                )
+
+    alpha_chars = [c.lower() for c in risposta if c.isalpha()]
+    if len(alpha_chars) > 8:
+        unique_ratio = len(set(alpha_chars)) / len(alpha_chars)
+        if unique_ratio < 0.3:
+            return False, (
+                "La risposta sembra composta da caratteri casuali. "
+                "Riprova con parole di senso compiuto."
+            )
+
+    if len(words) <= 2 and len(risposta) < 15:
+        return False, "La risposta è troppo breve per essere valutata. Prova a elaborare di più."
+
+    exercise_keywords = set(
+        w.lower().strip(".,;:!?()[]{}\"'")
+        for w in esercizio.split()
+        if len(w) > 3 and w.isalpha()
+    )
+    response_words_set = set(
+        w.lower().strip(".,;:!?()[]{}\"'")
+        for w in words
+        if len(w) > 3 and w.isalpha()
+    )
+    if exercise_keywords and response_words_set:
+        overlap = exercise_keywords & response_words_set
+        if len(overlap) == 0:
+            return False, (
+                "La risposta non sembra pertinente all'esercizio. "
+                "Prova a leggere meglio la domanda e rispondere in modo mirato."
+            )
+
+    return True, ""
+
+
+# ─────────────────────────────────────────────────────────────
+# Opzione C — Sanity check LLM (doppio passaggio)
+# ─────────────────────────────────────────────────────────────
+
+def sanity_check_risposta(esercizio: str, risposta_utente: str):
+
+    if not ENABLE_SANITY_CHECK:
+        return True, ""
+
+    prompt = f"""Verifica se la seguente risposta è pertinente all'esercizio.
+
+ESERCIZIO: {esercizio}
+
+RISPOSTA UTENTE: {risposta_utente}
+
+Rispondi SOLO con un JSON:
+{{
+  "pertinente": true/false,
+  "motivo": "breve spiegazione se non pertinente, altrimenti stringa vuota"
+}}
+
+Considera NON pertinente se:
+- La risposta è completamente fuori tema o parla di tutt'altro
+- È composta da caratteri casuali o stringhe senza senso
+- È un tentativo di bypassare l'esercizio (es. barzellette, testi copia-incolla non attinenti)
+- Non dimostra alcuno sforzo di affrontare la domanda
+"""
+
+    messages = [
+        {"role": "system", "content": "Sei un validatore di pertinenza. Rispondi solo in JSON."},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        response_text = _get_chat_response_text(messages, temperature=SANITY_CHECK_TEMPERATURE)
+        result = json.loads(_normalize_json_text(response_text))
+        is_pertinent = result.get('pertinente', True)
+        motivo = result.get('motivo', '')
+        return is_pertinent, motivo
+    except Exception:
+        return True, ""
+
+
 def generate_microlearning_path(topic: str, level: str, context_modules: list | None = None) -> TutorResponse:
     user_prompt = (
         f"Argomento: {topic}\n"
@@ -216,6 +333,8 @@ REGOLE:
 - Se la risposta dell'utente è sostanzialmente corretta, imposta `esito` a "corretta" e fornisci almeno 2 voci in `punti_di_forza` e 1-2 in `punti_migliorabili`.
 - Se la risposta è parzialmente corretta o manca di dettagli, imposta `esito` a "parziale".
 - Se la risposta è "non lo so", completamente sbagliata o molto imprecisa, imposta `esito` a "sbagliata", lascia `punti_di_forza` vuoto e concentra il feedback su `punti_migliorabili`.
+- Se la risposta è totalmente fuori tema, senza senso, composta da caratteri casuali (keyboard smashing), barzellette, testi copia-incolla non attinenti o non dimostra alcuno sforzo di affrontare l'esercizio: imposta `esito` a "sbagliata", lascia `punti_di_forza` vuoto, e usa `commento_costruttivo` per spiegare gentilmente che la risposta non è pertinente, invitando l'utente a rileggere l'esercizio e riprovare con un approccio più focalizzato. Il `suggerimento_miglioramento` deve indicare un'azione concreta per rimettersi in carreggiata.
+- Se la risposta non ha alcuna attinenza con l'esercizio, non cercare punti di forza forzatamente: `punti_di_forza` deve essere una lista vuota.
 - `punti_di_forza` deve essere analitico, sintetico e non ripetere il `commento_costruttivo`.
 - Non aggiungere il `commento_costruttivo` all'interno di `punti_di_forza`.
 - Rispondi SOLO con il JSON richiesto.

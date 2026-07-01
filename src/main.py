@@ -4,6 +4,8 @@ from .generator import (
     genera_spiegazione_alternativa,
     genera_riepilogo_finale,
     genera_hint,
+    valida_input_euristico,
+    sanity_check_risposta,
 )
 from .database import (
     init_db,
@@ -62,7 +64,24 @@ def main():
                     print("Soluzione vuota. Passaggio al prossimo modulo.\n")
                     break
 
+                # Opzione A — Filtro euristico (gratuito, immediato)
+                valido_eur, motivo_eur = valida_input_euristico(modulo.esercizio_pratico, user_solution)
+                if not valido_eur:
+                    print(f"\n⚠️  {motivo_eur}\n")
+                    continue
+
+                # Opzione C — Sanity check LLM (leggero)
+                print("🔍 Verifica pertinenza della risposta...")
+                pertinente, motivo_sc = sanity_check_risposta(modulo.esercizio_pratico, user_solution)
+                if not pertinente:
+                    msg = "La tua risposta non sembra pertinente all'esercizio"
+                    if motivo_sc:
+                        msg += f": {motivo_sc}"
+                    print(f"\n⚠️  {msg}. Riprova con una risposta più mirata.\n")
+                    continue
+
                 try:
+                    # Opzione B — Valutazione completa (prompt arricchito)
                     feedback = valuta_risposta(modulo.esercizio_pratico, user_solution)
 
                     if db_id:
