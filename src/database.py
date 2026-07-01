@@ -270,8 +270,13 @@ def create_user(username: str, password: str) -> int | None:
         conn.commit()
         conn.close()
         return uid
-    except Exception:
-        logger.warning("Username già esistente: %s", username)
+    except Exception as exc:
+        if IS_PG and isinstance(exc, psycopg2.errors.UniqueViolation):
+            logger.warning("Username già esistente: %s", username)
+        elif not IS_PG and "UNIQUE constraint" in str(exc):
+            logger.warning("Username già esistente: %s", username)
+        else:
+            logger.error("Errore creazione utente: %s", exc, exc_info=True)
         conn.rollback()
         conn.close()
         return None
@@ -455,7 +460,8 @@ def find_similar_modules(query: str, top_k: int = 5) -> list[dict]:
         "SELECT m.id, m.titolo, m.spiegazione, m.esercizio, m.embedding, s.topic, s.level "
         "FROM modules m JOIN sessions s ON m.session_id = s.id "
         "WHERE m.embedding IS NOT NULL "
-        "ORDER BY s.created_at DESC"
+        "ORDER BY s.created_at DESC "
+        "LIMIT 200"
     ).fetchall()
     conn.close()
 

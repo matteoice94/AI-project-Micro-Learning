@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 432 348" width="432" height="348" shape-rendering="crispEdges">
+  <defs><style>
+    .g{fill:#FFD700}.b3{fill:#64B5F6}.b2{fill:#1565C0}.b1{fill:#003F87}.p{fill:#4B0082}.d{fill:#0A1628}
+  </style></defs>
+  <rect x="192" y="0" width="24" height="24" class="g"/><rect x="216" y="0" width="24" height="24" class="g"/>
+  <rect x="192" y="24" width="24" height="24" class="g"/><rect x="216" y="24" width="24" height="24" class="g"/>
+  <rect x="120" y="48" width="24" height="24" class="b3"/><rect x="144" y="48" width="24" height="24" class="b2"/><rect x="168" y="48" width="24" height="24" class="b2"/><rect x="192" y="48" width="24" height="24" class="b2"/><rect x="216" y="48" width="24" height="24" class="b2"/><rect x="240" y="48" width="24" height="24" class="b2"/><rect x="264" y="48" width="24" height="24" class="b2"/><rect x="288" y="48" width="24" height="24" class="b3"/>
+  <rect x="96" y="72" width="24" height="24" class="b3"/><rect x="120" y="72" width="24" height="24" class="b2"/><rect x="144" y="72" width="24" height="24" class="b2"/><rect x="168" y="72" width="24" height="24" class="b2"/><rect x="192" y="72" width="24" height="24" class="b2"/><rect x="216" y="72" width="24" height="24" class="b2"/><rect x="240" y="72" width="24" height="24" class="b2"/><rect x="264" y="72" width="24" height="24" class="b2"/><rect x="288" y="72" width="24" height="24" class="b2"/><rect x="312" y="72" width="24" height="24" class="b3"/>
+  <rect x="72" y="96" width="24" height="24" class="b2"/><rect x="96" y="96" width="24" height="24" class="b1"/><rect x="120" y="96" width="24" height="24" class="b1"/><rect x="144" y="96" width="24" height="24" class="b1"/><rect x="168" y="96" width="24" height="24" class="b1"/><rect x="192" y="96" width="24" height="24" class="b1"/><rect x="216" y="96" width="24" height="24" class="b1"/><rect x="240" y="96" width="24" height="24" class="b1"/><rect x="264" y="96" width="24" height="24" class="b1"/><rect x="288" y="96" width="24" height="24" class="b1"/><rect x="312" y="96" width="24" height="24" class="b1"/><rect x="336" y="96" width="24" height="24" class="b2"/>
+  <rect x="48" y="144" width="24" height="24" class="b3"/><rect x="360" y="144" width="24" height="24" class="b3"/>
+  <rect x="48" y="168" width="24" height="24" class="b3"/><rect x="360" y="168" width="24" height="24" class="b3"/>
+  <rect x="48" y="192" width="24" height="24" class="b3"/><rect x="360" y="192" width="24" height="24" class="b3"/>
+  <rect x="48" y="216" width="24" height="24" class="b3"/><rect x="360" y="216" width="24" height="24" class="b3"/>
+  <rect x="72" y="120" width="24" height="24" class="b2"/><rect x="96" y="120" width="24" height="24" class="b1"/><rect x="312" y="120" width="24" height="24" class="b1"/><rect x="336" y="120" width="24" height="24" class="b2"/>
+  <rect x="72" y="144" width="24" height="24" class="b2"/><rect x="96" y="144" width="24" height="24" class="b1"/><rect x="312" y="144" width="24" height="24" class="b1"/><rect x="336" y="144" width="24" height="24" class="b2"/>
+  <rect x="72" y="168" width="24" height="24" class="b2"/><rect x="96" y="168" width="24" height="24" class="b1"/><rect x="312" y="168" width="24" height="24" class="b1"/><rect x="336" y="168" width="24" height="24" class="b2"/>
+  <rect x="72" y="192" width="24" height="24" class="b2"/><rect x="96" y="192" width="24" height="24" class="b1"/><rect x="312" y="192" width="24" height="24" class="b1"/><rect x="336" y="192" width="24" height="24" class="b2"/>
+  <rect x="72" y="216" width="24" height="24" class="b2"/><rect x="96" y="216" width="24" height="24" class="b1"/><rect x="312" y="216" width="24" height="24" class="b1"/><rect x="336" y="216" width="24" height="24" class="b2"/>
+  <rect x="72" y="240" width="24" height="24" class="b2"/><rect x="96" y="240" width="24" height="24" class="b1"/><rect x="312" y="240" width="24" height="24" class="b1"/><rect x="336" y="240" width="24" height="24" class="b2"/>
+  <rect x="120" y="120" width="192" height="120" class="d"/>
+
+  <!-- OCCHI ^ ^ : V chiare, centrate nello schermo senza bocca -->
+  <!-- Sinistro: punta a row 144 col 144, base largha a row 168 col 120 e 168 -->
+  <rect x="144" y="144" width="24" height="24" class="p"/>
+  <rect x="120" y="168" width="24" height="24" class="p"/>
+  <rect x="168" y="168" width="24" height="24" class="p"/>
+  <!-- Destro: punta a row 144 col 264, base largha a row 168 col 240 e 288 -->
+  <rect x="264" y="144" width="24" height="24" class="p"/>
+  <rect x="240" y="168" width="24" height="24" class="p"/>
+  <rect x="288" y="168" width="24" height="24" class="p"/>
+
+  <rect x="72" y="264" width="24" height="24" class="b2"/><rect x="96" y="264" width="24" height="24" class="b1"/><rect x="120" y="264" width="24" height="24" class="b1"/><rect x="144" y="264" width="24" height="24" class="b1"/><rect x="168" y="264" width="24" height="24" class="b1"/><rect x="192" y="264" width="24" height="24" class="b1"/><rect x="216" y="264" width="24" height="24" class="b1"/><rect x="240" y="264" width="24" height="24" class="b1"/><rect x="264" y="264" width="24" height="24" class="b1"/><rect x="288" y="264" width="24" height="24" class="b1"/><rect x="312" y="264" width="24" height="24" class="b1"/><rect x="336" y="264" width="24" height="24" class="b2"/>
+  <rect x="96" y="288" width="24" height="24" class="b3"/><rect x="120" y="288" width="24" height="24" class="b2"/><rect x="144" y="288" width="24" height="24" class="b2"/><rect x="168" y="288" width="24" height="24" class="b2"/><rect x="192" y="288" width="24" height="24" class="b2"/><rect x="216" y="288" width="24" height="24" class="b2"/><rect x="240" y="288" width="24" height="24" class="b2"/><rect x="264" y="288" width="24" height="24" class="b2"/><rect x="288" y="288" width="24" height="24" class="b2"/><rect x="312" y="288" width="24" height="24" class="b3"/>
+  <rect x="120" y="312" width="24" height="24" class="b3"/><rect x="144" y="312" width="24" height="24" class="b2"/><rect x="168" y="312" width="24" height="24" class="b2"/><rect x="192" y="312" width="24" height="24" class="b2"/><rect x="216" y="312" width="24" height="24" class="b2"/><rect x="240" y="312" width="24" height="24" class="b2"/><rect x="264" y="312" width="24" height="24" class="b2"/><rect x="288" y="312" width="24" height="24" class="b3"/>
+  <text x="216" y="340" text-anchor="middle" font-family="'Courier New',monospace" font-size="14" font-weight="bold" fill="#64B5F6" letter-spacing="6">MLPG</text>
+</svg>

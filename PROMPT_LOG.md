@@ -136,3 +136,27 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Azione:** Implementato sistema di autenticazione multi-utente: tabella `users` in SQLite, schermata di login/registrazione all'avvio, storico filtrato per `user_id`.
   - **Obiettivo:** Ogni utente ha il proprio storico personale (condivisione via ngrok sicura).
   - **Risultato:** Login con username/password (hashata), registrazione, logout. Sessioni filtrate per utente.
+
+---
+
+## [1 Luglio 2026] - Prompt, UX e Logo
+
+### Prompt — Tutor incoraggiante per risposte "non lo so"
+- **Azione:** Modificato `valida_input_euristico()` e `valuta_risposta()` per non bloccare/bloccare meno le risposte di difficoltà.
+  - **Obiettivo:** Invece di dire "Sembra che tu non abbia provato", il tutor ora incoraggia e suggerisce di usare "Chiedi chiarimenti".
+  - **Dettagli:** I pattern "non lo so", "non capisco" etc. non sono più bloccanti ma mostrano un messaggio incoraggiante. Il prompt di valutazione AI imposta `esito: parziale` (non "sbagliata") e invita a chiedere aiuto.
+
+### UX — Multi-pagina Streamlit (st.navigation)
+- **Azione:** Convertita app da single-page a multi-pagina con `st.navigation` e `st.Page`.
+  - **Obiettivo:** Separare creazione percorso da gestione storico, dando più spazio a quest'ultimo.
+  - **Risultato:** Due pagine: "Nuovo Percorso" e "I Miei Percorsi". Sidebar contestuale (configurazione solo nella prima). Componente condiviso `_render_modulo_archivio()`.
+
+### UX — Logo robot 8-bit animato
+- **Azione:** Creato logo pixel art (432x348, blocchi 24px) con palette MLPG.
+  - **Obiettivo:** Dare identità visiva al tutor con un personaggio riconoscibile.
+  - **Risultato:** 3 espressioni statiche (neutro 2x2, happy ^ ^, thinking 1px) + versione animata con glitch+morph di 12 secondi.
+
+### UX — Robot come indicatore di stato nell'UI
+- **Azione:** Integrato il robot in login, welcome, sidebar e sotto i pulsanti di azione.
+  - **Obiettivo:** Feedback visivo immediato sullo stato dell'operazione (in attesa, in elaborazione, completata).
+  - **Risultato:** State machine: neutro (idle) → thinking (elaborazione) → happy (successo). Il robot segue l'azione attiva (valutazione o chiarimenti), mutuamente esclusivo.

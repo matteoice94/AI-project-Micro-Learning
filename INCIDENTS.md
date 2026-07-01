@@ -114,3 +114,59 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 - **Feature:** Badge pills colorati per stato moduli (Fatto/Arch./Aperto).
 - **Feature:** Syntax highlighting per blocchi di codice (```python```).
 - **Feature:** Le risposte corrette dei moduli archiviati sono ora persistenti e ricaricate alla riapertura.
+
+---
+
+## [1 Luglio 2026] - Database, UI, Logo e Animazioni
+
+### Bug Fix — psycopg2 compatibility
+- **Errore:** `AttributeError: conn.execute()` su PostgreSQL (psycopg2 non supporta `execute()` direttamente sulla connessione).
+  - **Soluzione:** Creato wrapper `_DB` in `database.py` che unifica l'interfaccia sqlite3/psycopg2 con metodo `.execute()`.
+  - **Note:** Aggiunto try/except per import psycopg2 con fallback a SQLite se non installato.
+
+### Bug Fix — create_user catch troppo ampio
+- **Errore:** `except Exception` in `create_user()` trattava ogni errore come "Username già esistente".
+  - **Soluzione:** Catch specifico per `UniqueViolation` (PG) e "UNIQUE constraint" (SQLite), log separato per altri errori.
+
+### Bug Fix — find_similar_modules senza LIMIT
+- **Errore:** `find_similar_modules()` fetchava tutte le righe senza LIMIT, O(n) scan.
+  - **Soluzione:** Aggiunto `LIMIT 200` alla query SQL.
+
+### Bug Fix — Loop infinito selectbox stato modulo
+- **Errore:** Il dropdown stato modulo offriva solo "in sospeso" e "completato", ma i moduli potevano essere "archiviato". Il mismatch causava rerender infiniti.
+  - **Soluzione:** Aggiunto "archiviato" come terza opzione, `update_module_state()` ora supporta `archived=True`.
+
+### Bug Fix — Confirm dialog per azioni distruttive
+- **Errore:** Delete sessione, delete modulo e logout senza conferma causavano perdita dati accidentale.
+  - **Soluzione:** Convertiti in `st.popover` con pulsante di conferma esplicito.
+
+### Bug Fix — Progress bar overflow e stringhe hardcodate
+- **Errore:** Barra di avanzamento crashava se `completati > totali`; messaggio "terzo modulo" hardcodato.
+  - **Soluzione:** `min(completati/totali, 1.0)` + stringa dinamica con conteggio moduli.
+
+### Bug Fix — Migrazione archiviati eseguita a ogni page load
+- **Errore:** Il blocco migrazione dati girava su ogni caricamento pagina.
+  - **Soluzione:** Aggiunta guardia `_migrated_archiviati` in session_state.
+
+### Bug Fix — Prompt system_mlpg.md JSON rotto
+- **Errore:** Graffa extra nel template JSON mostrato al LLM.
+  - **Soluzione:** Rimossa graffa duplicata, cancellato file vuoto `system_mlpg.md.txt`.
+
+### Bug Fix — Filtro euristico bloccava codice Python
+- **Errore:** `valida_input_euristico()` scambiava codice Python per spam (ratio caratteri unici < 0.3, keyword overlap zero).
+  - **Soluzione:** Soglia alzata da 8 a 80 caratteri; keyword overlap saltato se rileva indicatori di codice (`def`, `print(`, `=`, `{`).
+
+### Feature — Multi-pagina con st.navigation
+- **Azione:** Convertita app single-page in multi-pagina con `st.navigation`.
+  - **Dettagli:** Pagina "🏠 Nuovo Percorso" (principale) e "📚 I Miei Percorsi" (storico a schermo intero).
+  - **Componente condiviso:** `_render_modulo_archivio()` usato da entrambe le pagine.
+
+### Feature — Logo robot 8-bit con espressioni animate
+- **Azione:** Creato logo pixel art stile retro (432x348, griglia 24px).
+  - **Dettagli:** 3 espressioni (neutro 2x2 occhi, happy ^ ^, thinking 1px strizzato + bocca a sx) + versione animata con ciclo glitch+morph di 12s.
+  - **Palette:** Blu oltremare #003F87, indaco #4B0082, azzurro #64B5F6, oro #FFD700, nero schermo #0A1628.
+
+### Feature — Robot integrato nell'UI come indicatore di stato
+- **Azione:** Robot visibile in login, welcome, sidebar, e sotto i pulsanti "Valuta soluzione" e "Chiedi chiarimenti".
+  - **Dettagli:** State machine a due passi: click → thinking robot → valutazione API → happy/neutral.
+  - **Modulo:** `src/robot_display.py` per helper riutilizzabile.

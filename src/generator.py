@@ -197,7 +197,7 @@ def valida_input_euristico(esercizio: str, risposta_utente: str):
                 )
 
     alpha_chars = [c.lower() for c in risposta if c.isalpha()]
-    if len(alpha_chars) > 8:
+    if len(alpha_chars) > 80:
         unique_ratio = len(set(alpha_chars)) / len(alpha_chars)
         if unique_ratio < 0.3:
             return False, (
@@ -208,23 +208,28 @@ def valida_input_euristico(esercizio: str, risposta_utente: str):
     if len(words) <= 2 and len(risposta) < 15:
         return False, "La risposta è troppo breve per essere valutata. Prova a elaborare di più."
 
-    exercise_keywords = set(
-        w.lower().strip(".,;:!?()[]{}\"'")
-        for w in esercizio.split()
-        if len(w) > 3 and w.isalpha()
-    )
-    response_words_set = set(
-        w.lower().strip(".,;:!?()[]{}\"'")
-        for w in words
-        if len(w) > 3 and w.isalpha()
-    )
-    if exercise_keywords and response_words_set:
-        overlap = exercise_keywords & response_words_set
-        if len(overlap) == 0:
-            return False, (
-                "La risposta non sembra pertinente all'esercizio. "
-                "Prova a leggere meglio la domanda e rispondere in modo mirato."
-            )
+    _code_indicators = ("print(", "def ", "import ", "class ", " = ", "==",
+                        "{", "}", "for ", "while ", "if ", "elif ", "else:")
+    looks_like_code = any(c in risposta for c in _code_indicators)
+
+    if not looks_like_code:
+        exercise_keywords = set(
+            w.lower().strip(".,;:!?()[]{}\"'")
+            for w in esercizio.split()
+            if len(w) > 3 and w.isalpha()
+        )
+        response_words_set = set(
+            w.lower().strip(".,;:!?()[]{}\"'")
+            for w in words
+            if len(w) > 3 and w.isalpha()
+        )
+        if exercise_keywords and response_words_set:
+            overlap = exercise_keywords & response_words_set
+            if len(overlap) == 0:
+                return False, (
+                    "La risposta non sembra pertinente all'esercizio. "
+                    "Prova a leggere meglio la domanda e rispondere in modo mirato."
+                )
 
     return True, ""
 

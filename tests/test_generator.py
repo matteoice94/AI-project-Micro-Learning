@@ -193,7 +193,7 @@ class TestTutorResponse:
             Modulo(
                 id=1,
                 titolo_modulo="Test",
-                spiegazione="x" * 2000,
+                spiegazione="x" * 2600,
                 esercizio_pratico="Prova",
             )
 

@@ -69,7 +69,6 @@ Rispondi esclusivamente in formato JSON con la seguente struttura:
         "spiegazione": "string",
         "esercizio_pratico": "string"
       }
-      }
     ]
   }
 }

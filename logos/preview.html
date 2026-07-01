@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>MLPG Logo Concepts - Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0A1628;
+      color: #FFFFFF;
+      font-family: Arial, sans-serif;
+      padding: 40px 20px;
+    }
+    h1 { text-align: center; font-size: 1.8rem; margin-bottom: 10px; }
+    .sub { text-align: center; color: rgba(255,255,255,0.5); margin-bottom: 40px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 24px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .card {
+      background: linear-gradient(145deg, #141E30, #1A2332);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      transition: border-color 0.3s;
+    }
+    .card:hover { border-color: rgba(255,255,255,0.2); }
+    .card img { width: 180px; height: 180px; margin-bottom: 12px; }
+    .card h3 { font-size: 1rem; margin-bottom: 4px; }
+    .card p { font-size: 0.8rem; color: rgba(255,255,255,0.5); line-height: 1.4; }
+    .label { display: inline-block; margin-top: 8px; padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; background: rgba(75,0,130,0.3); color: #B388FF; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+  <h1>MLPG Logo Concepts</h1>
+  <p class="sub">6 proposte — scegli la direzione che preferisci</p>
+
+  <!-- Highlight: monogramma v3 -->
+  <div style="max-width:320px; margin: 0 auto 40px auto; background: linear-gradient(145deg, #141E30, #1A2332); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; text-align: center;">
+    <img src="concept_f_v3_uniform.svg" alt="MLPG Monogram" style="width:260px; margin-bottom:12px;">
+    <p style="font-size:0.85rem; color: rgba(255,255,255,0.7);">F v3 — Monogramma uniforme: stessa altezza, stessa baseline, unico gradiente</p>
+  </div>
+
+  <div class="grid">
+
+    <div class="card">
+      <img src="concept_a_sentiero.svg" alt="Sentiero Modulare">
+      <h3>A — Il Sentiero Modulare</h3>
+      <p>3 blocchi connessi da una curva ascendente: il percorso base → intermedio → avanzato.</p>
+      <span class="label">GEOMETRICO</span>
+    </div>
+
+    <div class="card">
+      <img src="concept_b_cervello_matoncini.svg" alt="Cervello a Mattoncini">
+      <h3>B — Cervello a Mattoncini</h3>
+      <p>Conoscenza costruita pezzo per pezzo. Una scintilla AI accanto al cervello.</p>
+      <span class="label">GIOCOSO</span>
+    </div>
+
+    <div class="card">
+      <img src="concept_c_lampadina_segmenti.svg" alt="Lampadina a Segmenti">
+      <h3>C — Lampadina a Segmenti</h3>
+      <p>3 segmenti che si accendono progressivamente su base a libro. Idea → luce.</p>
+      <span class="label">METAFORICO</span>
+    </div>
+
+    <div class="card">
+      <img src="concept_d_bussola.svg" alt="Bussola dell'Apprendimento">
+      <h3>D — Bussola dell'Apprendimento</h3>
+      <p>Bussola a 3 punte con microcircuito AI al centro. Guida personalizzata.</p>
+      <span class="label">TECH</span>
+    </div>
+
+    <div class="card">
+      <img src="concept_e_scala_molecolare.svg" alt="Scala Molecolare">
+      <h3>E — Scala Molecolare</h3>
+      <p>3 esagoni collegati: teoria → pratica → maestria. Progressione a tappe.</p>
+      <span class="label">STRUTTURATO</span>
+    </div>
+
+    <div class="card">
+      <img src="concept_f_v3_uniform.svg" alt="Monogramma MLPG v3">
+      <h3>F — Monogramma MLPG</h3>
+      <p>M (doppia colonna), L (freccia su), P (percorso curvo), G (cerchio + spunta ✓).</p>
+      <span class="label">TIPOGRAFICO</span>
+    </div>
+
+  </div>
+</body>
+</html>
