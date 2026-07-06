@@ -170,3 +170,36 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 - **Azione:** Robot visibile in login, welcome, sidebar, e sotto i pulsanti "Valuta soluzione" e "Chiedi chiarimenti".
   - **Dettagli:** State machine a due passi: click → thinking robot → valutazione API → happy/neutral.
   - **Modulo:** `src/robot_display.py` per helper riutilizzabile.
+
+## [6 Luglio 2026] - Sicurezza: password in chiaro con SHA-256 + salt hardcoded
+- **Errore:** `database.py` usava `hashlib.sha256()` con salt fisso `mlpg_salt_2026_xyz` per hashare le password. Il salt era uguale per tutti gli utenti e visibile nel codice sorgente.
+- **Soluzione:** Sostituito con `bcrypt` (salt per-utente). Aggiunta backward compatibility: le password legacy SHA-256 vengono migrate automaticamente al primo login corretto.
+
+## [6 Luglio 2026] - Flask debug=True in produzione
+- **Errore:** `app.py:240` aveva `debug=True` hardcodato, esponendo la console Werkzeug e permettendo esecuzione arbitraria di codice.
+- **Soluzione:** Sostituito con `FLASK_DEBUG` env var, default `False`.
+
+## [6 Luglio 2026] - ImportError: valuta_con_pipeline non trovata
+- **Errore:** Streamlit non trovava `valuta_con_pipeline` in `src/generator.py` nonostante fosse presente nel file. I test da CLI funzionavano.
+- **Causa:** Cache `.pyc` stantia nel venv + processo Streamlit che teneva in memoria il modulo vecchio.
+- **Soluzione:** Pulizia completa `__pycache__`, kill processo, `-B` flag per evitare scrittura .pyc. Non ha funzionato finché non sono stati killati TUTTI i processi python residui.
+
+## [6 Luglio 2026] - PostgreSQL: DATE('now', '-7 days') non esiste
+- **Errore:** `get_user_weekly_activity()` usava la sintassi SQLite `DATE('now', '-7 days')` che PostgreSQL non supporta.
+- **Soluzione:** Calcolata la data in Python con `datetime.timedelta` e passata come parametro, compatibile con entrambi i backend.
+
+## [6 Luglio 2026] - PostgreSQL: colonna created_at ambigua
+- **Errore:** La query `get_user_weekly_activity()` aveva `DATE(created_at)` senza qualificatore di tabella, ambiguo tra `attempts.created_at` e `sessions.created_at`.
+- **Soluzione:** Aggiunto prefisso tabella: `DATE(a.created_at)`.
+
+## [6 Luglio 2026] - Pulizia file inutilizzati
+- **Errore:** Cartella `logos/` conteneva 35 SVG, di cui solo 4 usati dal codice. Le 31 varianti scartate occupavano ~200 KB.
+- **Soluzione:** Eliminati 31 SVG inutilizzati + 4 HTML preview + tutte le cache. Tenuti solo i 4 SVG referenziati da `robot_display.py`.
+
+## [6 Luglio 2026] - Stringhe hardcodate in italiano dopo i18n
+- **Errore:** Nonostante il sistema i18n, lo status dropdown ("in sospeso"/"completato"/"archiviato"), il titolo app ("MLPG Tutor con Streamlit"), il language selector ("Italiano") e i diario note erano ancora hardcodati in italiano.
+- **Soluzione:** Status dropdown rifattorizzato a indici con `format_func` tradotto. Tutte le stringhe rimanenti wrappate in `tr()`.
+
+## [6 Luglio 2026] - Persistenza sessione al refresh
+- **Errore:** Fare F5 riportava alla pagina di login perché `st.session_state` non sopravvive al refresh del browser.
+- **Soluzione:** Implementato session token firmato (SHA-256) salvato in `st.query_params`. Al refresh, il token viene verificato e l'utente auto-autenticato.

@@ -1,6 +1,8 @@
 import os
 import json
 import math
+import functools
+import bcrypt
 import hashlib
 import logging
 import sqlite3
@@ -10,8 +12,6 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from .config import OPENROUTER_EMBED_URL, EMBED_MODEL, EMBED_TIMEOUT, RAG_TOP_K, RAG_SIMILARITY_THRESHOLD
-
-AUTH_SALT = "mlpg_salt_2026_xyz"
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +148,24 @@ CREATE TABLE IF NOT EXISTS attempts (
 
 CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
+
+CREATE TABLE IF NOT EXISTS user_stats (
+    user_id INTEGER PRIMARY KEY,
+    xp INTEGER DEFAULT 0,
+    level INTEGER DEFAULT 1,
+    current_streak INTEGER DEFAULT 0,
+    max_streak INTEGER DEFAULT 0,
+    last_active_date TEXT,
+    badges TEXT DEFAULT '[]',
+    total_correct INTEGER DEFAULT 0,
+    total_wrong INTEGER DEFAULT 0,
+    total_modules_completed INTEGER DEFAULT 0,
+    total_paths_completed INTEGER DEFAULT 0,
+    total_sessions INTEGER DEFAULT 0,
+    topics_studied TEXT DEFAULT '[]',
+    consecutive_correct INTEGER DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
 """
 
 SCHEMA_PG = """
@@ -190,6 +208,23 @@ CREATE TABLE IF NOT EXISTS attempts (
 
 CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
+
+CREATE TABLE IF NOT EXISTS user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    xp INTEGER DEFAULT 0,
+    level INTEGER DEFAULT 1,
+    current_streak INTEGER DEFAULT 0,
+    max_streak INTEGER DEFAULT 0,
+    last_active_date TEXT,
+    badges TEXT DEFAULT '[]',
+    total_correct INTEGER DEFAULT 0,
+    total_wrong INTEGER DEFAULT 0,
+    total_modules_completed INTEGER DEFAULT 0,
+    total_paths_completed INTEGER DEFAULT 0,
+    total_sessions INTEGER DEFAULT 0,
+    topics_studied TEXT DEFAULT '[]',
+    consecutive_correct INTEGER DEFAULT 0
+);
 """
 
 
@@ -208,7 +243,8 @@ def init_db():
 
 # ── embedding ──────────────────────────────────────────────
 
-def compute_embedding(text: str) -> list[float]:
+@functools.lru_cache(maxsize=128)
+def compute_embedding(text: str) -> tuple[float, ...]:
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY non trovata per embeddings.")
@@ -236,7 +272,8 @@ def compute_embedding(text: str) -> list[float]:
         raise RuntimeError(f"Embedding HTTP {exc.code}: {body_text}") from exc
 
     try:
-        return body["data"][0]["embedding"]
+        emb = body["data"][0]["embedding"]
+        return tuple(emb)
     except (KeyError, IndexError):
         raise RuntimeError("Risposta embedding non valida.")
 
@@ -253,7 +290,18 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 # ── autenticazione ──────────────────────────────────────────
 
 def _hash_password(password: str) -> str:
-    return hashlib.sha256((password + AUTH_SALT).encode()).hexdigest()
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except ValueError:
+        return False
+
+
+def _is_legacy_sha256(hashed: str) -> bool:
+    return len(hashed) == 64 and all(c in "0123456789abcdef" for c in hashed.lower())
 
 
 def create_user(username: str, password: str) -> int | None:
@@ -284,13 +332,34 @@ def create_user(username: str, password: str) -> int | None:
 
 def authenticate_user(username: str, password: str) -> dict | None:
     conn = _get_conn()
-    hashed = _hash_password(password)
     row = conn.execute(
-        _adapt("SELECT id, username FROM users WHERE username = ? AND password = ?"),
-        (username, hashed),
+        _adapt("SELECT id, username, password FROM users WHERE username = ?"),
+        (username,),
     ).fetchone()
     conn.close()
-    return dict(row) if row else None
+
+    if not row:
+        return None
+
+    stored = row["password"]
+
+    # bcrypt
+    if _verify_password(password, stored):
+        return {"id": row["id"], "username": row["username"]}
+
+    # legacy SHA-256 migration
+    if _is_legacy_sha256(stored):
+        legacy_hash = hashlib.sha256((password + "mlpg_salt_2026_xyz").encode()).hexdigest()
+        if legacy_hash == stored:
+            new_hash = _hash_password(password)
+            conn2 = _get_conn()
+            conn2.execute(_adapt("UPDATE users SET password = ? WHERE id = ?"), (new_hash, row["id"]))
+            conn2.commit()
+            conn2.close()
+            logger.info("Password migrata a bcrypt per utente: %s", username)
+            return {"id": row["id"], "username": row["username"]}
+
+    return None
 
 
 def get_user_by_id(user_id: int) -> dict | None:
@@ -300,6 +369,303 @@ def get_user_by_id(user_id: int) -> dict | None:
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# ── user_stats (gamification) ──────────────────────────────
+
+def ensure_user_stats(user_id: int) -> dict:
+    conn = _get_conn()
+    row = conn.execute(
+        _adapt("SELECT * FROM user_stats WHERE user_id = ?"), (user_id,)
+    ).fetchone()
+    if not row:
+        conn.execute(
+            _adapt("INSERT INTO user_stats (user_id) VALUES (?)"), (user_id,)
+        )
+        conn.commit()
+        row = conn.execute(
+            _adapt("SELECT * FROM user_stats WHERE user_id = ?"), (user_id,)
+        ).fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
+def update_user_stats(user_id: int, updates: dict):
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [user_id]
+    conn = _get_conn()
+    conn.execute(
+        _adapt(f"UPDATE user_stats SET {set_clause} WHERE user_id = ?"),
+        tuple(values),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user_stats(user_id: int) -> dict:
+    return ensure_user_stats(user_id)
+
+
+def get_leaderboard(limit: int = 10) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        _adapt(
+            "SELECT u.username, s.xp, s.level, s.current_streak, s.total_modules_completed "
+            "FROM user_stats s JOIN users u ON s.user_id = u.id "
+            "ORDER BY s.xp DESC LIMIT ?"
+        ),
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_user_topic_stats(user_id: int) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        _adapt(
+            "SELECT topic, COUNT(*) as session_count FROM sessions "
+            "WHERE user_id = ? GROUP BY topic ORDER BY session_count DESC"
+        ),
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_user_accuracy(user_id: int) -> float:
+    stats = get_user_stats(user_id)
+    total = stats.get("total_correct", 0) + stats.get("total_wrong", 0)
+    if total == 0:
+        return 0.0
+    return stats.get("total_correct", 0) / total * 100
+
+
+def get_user_weekly_activity(user_id: int) -> list[dict]:
+    from datetime import date, timedelta
+    seven_days_ago = (date.today() - timedelta(days=7)).isoformat()
+    conn = _get_conn()
+    rows = conn.execute(
+        _adapt(
+            "SELECT DATE(a.created_at) as day, COUNT(*) as count "
+            "FROM attempts a JOIN modules m ON a.module_id = m.id "
+            "JOIN sessions s ON m.session_id = s.id "
+            "WHERE s.user_id = ? "
+            "AND a.created_at >= ? "
+            "GROUP BY day ORDER BY day"
+        ),
+        (user_id, seven_days_ago),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def award_user_xp(user_id: int | None, reason: str, topic: str = "", is_first_try: bool = True) -> tuple[int, list[str]]:
+    """Award XP and update stats. Returns (xp_awarded, new_badges)."""
+    from .gamification import award_xp, check_badges, update_streak, level_from_xp
+    from datetime import date
+    import json
+
+    if not user_id:
+        return 0, []
+
+    stats = ensure_user_stats(user_id)
+    xp_gain = award_xp(reason)
+    if xp_gain == 0:
+        return 0, []
+
+    current_xp = stats.get("xp", 0) + xp_gain
+    new_level = level_from_xp(current_xp)
+    new_streak, new_max = update_streak(stats)
+
+    updates = {
+        "xp": current_xp,
+        "level": new_level,
+        "current_streak": new_streak,
+        "max_streak": max(stats.get("max_streak", 0), new_max),
+        "last_active_date": date.today().isoformat(),
+        "total_modules_completed": stats.get("total_modules_completed", 0) + 1,
+        "total_correct": stats.get("total_correct", 0) + 1,
+        "total_sessions": stats.get("total_sessions", 0) + 1,
+    }
+
+    if is_first_try:
+        updates["consecutive_correct"] = stats.get("consecutive_correct", 0) + 1
+    else:
+        updates["consecutive_correct"] = 0
+
+    if reason == "path_completed":
+        updates["total_paths_completed"] = stats.get("total_paths_completed", 0) + 1
+
+    if topic:
+        topics = json.loads(stats.get("topics_studied", "[]")) if isinstance(stats.get("topics_studied"), str) else stats.get("topics_studied", [])
+        if topic not in topics:
+            topics.append(topic)
+            updates["topics_studied"] = json.dumps(topics)
+
+    update_user_stats(user_id, updates)
+
+    updated_stats = {**stats, **updates}
+    new_badges, all_badges = check_badges(updated_stats)
+    if new_badges:
+        update_user_stats(user_id, {"badges": json.dumps(all_badges)})
+
+    return xp_gain, new_badges
+
+
+def track_wrong_answer(user_id: int | None):
+    """Track wrong answer for accuracy stats (no XP)."""
+    from datetime import date
+    from .gamification import update_streak
+    if not user_id:
+        return
+    stats = ensure_user_stats(user_id)
+    new_streak, new_max = update_streak(stats)
+    updates = {
+        "total_wrong": stats.get("total_wrong", 0) + 1,
+        "consecutive_correct": 0,
+        "last_active_date": date.today().isoformat(),
+        "current_streak": new_streak,
+        "max_streak": max(stats.get("max_streak", 0), new_max),
+        "total_sessions": stats.get("total_sessions", 0) + 1,
+    }
+    update_user_stats(user_id, updates)
+
+
+def backfill_user_stats():
+    """Popola user_stats per tutti gli utenti esistenti usando i dati storici."""
+    from .gamification import level_from_xp, check_badges
+    import json
+    from datetime import date
+
+    conn = _get_conn()
+    users = conn.execute("SELECT id, username FROM users").fetchall()
+    if not users:
+        conn.close()
+        return
+
+    for user in users:
+        user_id = user["id"]
+
+        completed = conn.execute(
+            _adapt(
+                "SELECT COUNT(*) as cnt FROM modules m "
+                "JOIN sessions s ON m.session_id = s.id "
+                "WHERE s.user_id = ? AND m.completed = 1"
+            ), (user_id,),
+        ).fetchone()["cnt"] or 0
+
+        correct = conn.execute(
+            _adapt(
+                "SELECT COUNT(*) as cnt FROM attempts a "
+                "JOIN modules m ON a.module_id = m.id "
+                "JOIN sessions s ON m.session_id = s.id "
+                "WHERE s.user_id = ? AND a.esito = 'corretta'"
+            ), (user_id,),
+        ).fetchone()["cnt"] or 0
+
+        wrong = conn.execute(
+            _adapt(
+                "SELECT COUNT(*) as cnt FROM attempts a "
+                "JOIN modules m ON a.module_id = m.id "
+                "JOIN sessions s ON m.session_id = s.id "
+                "WHERE s.user_id = ? AND a.esito != 'corretta'"
+            ), (user_id,),
+        ).fetchone()["cnt"] or 0
+
+        sessions = conn.execute(
+            _adapt("SELECT COUNT(*) as cnt FROM sessions WHERE user_id = ?"),
+            (user_id,),
+        ).fetchone()["cnt"] or 0
+
+        paths = conn.execute(
+            _adapt(
+                "SELECT s.id FROM sessions s JOIN modules m ON m.session_id = s.id "
+                "WHERE s.user_id = ? AND m.completed = 1 "
+                "GROUP BY s.id HAVING COUNT(*) = 3"
+            ), (user_id,),
+        ).fetchall()
+        path_count = len(paths)
+
+        topics_rows = conn.execute(
+            _adapt("SELECT DISTINCT topic FROM sessions WHERE user_id = ?"),
+            (user_id,),
+        ).fetchall()
+        topics = [r["topic"] for r in topics_rows if r["topic"]]
+
+        last_activity = conn.execute(
+            _adapt(
+                "SELECT MAX(a.created_at) as last_date FROM attempts a "
+                "JOIN modules m ON a.module_id = m.id "
+                "JOIN sessions s ON m.session_id = s.id "
+                "WHERE s.user_id = ?"
+            ), (user_id,),
+        ).fetchone()["last_date"]
+
+        # XP: 15 per modulo completato + 25 per percorso completato
+        xp = completed * 15 + path_count * 25
+        lvl = level_from_xp(xp)
+
+        streak = 0
+        if last_activity:
+            try:
+                ld = datetime.strptime(last_activity[:10], "%Y-%m-%d").date()
+                if (date.today() - ld).days <= 1:
+                    streak = 1
+            except (ValueError, TypeError):
+                pass
+
+        stats_dict = {
+            "total_correct": correct,
+            "total_wrong": wrong,
+            "total_modules_completed": completed,
+            "total_paths_completed": path_count,
+            "total_sessions": sessions,
+            "topics_studied": json.dumps(topics),
+            "badges": "[]",
+            "level": lvl,
+            "current_streak": streak,
+            "max_streak": streak,
+            "last_active_date": last_activity[:10] if last_activity else None,
+            "xp": xp,
+            "consecutive_correct": 0,
+        }
+
+        _, all_badges = check_badges(stats_dict)
+
+        existing = conn.execute(
+            _adapt("SELECT user_id FROM user_stats WHERE user_id = ?"),
+            (user_id,),
+        ).fetchone()
+
+        if existing:
+            conn.execute(_adapt(
+                "UPDATE user_stats SET xp=?, level=?, current_streak=?, max_streak=?, "
+                "last_active_date=?, badges=?, total_correct=?, total_wrong=?, "
+                "total_modules_completed=?, total_paths_completed=?, total_sessions=?, "
+                "topics_studied=? WHERE user_id=?"
+            ), (xp, lvl, streak, streak, last_activity[:10] if last_activity else None,
+                json.dumps(all_badges), correct, wrong, completed, path_count,
+                sessions, json.dumps(topics), user_id))
+        else:
+            conn.execute(_adapt(
+                "INSERT INTO user_stats (user_id, xp, level, current_streak, max_streak, "
+                "last_active_date, badges, total_correct, total_wrong, "
+                "total_modules_completed, total_paths_completed, total_sessions, "
+                "topics_studied) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            ), (user_id, xp, lvl, streak, streak,
+                last_activity[:10] if last_activity else None,
+                json.dumps(all_badges), correct, wrong, completed,
+                path_count, sessions, json.dumps(topics)))
+
+        logger.info("Backfill %s: %d mod, %d XP, lv%d, %d badge",
+                     user["username"], completed, xp, lvl, len(all_badges))
+
+    conn.commit()
+    conn.close()
+    logger.info("Backfill user_stats completato")
 
 
 # ── salvataggio ────────────────────────────────────────────

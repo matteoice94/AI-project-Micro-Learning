@@ -27,3 +27,11 @@ EMBED_TIMEOUT = 30
 # ── RAG ────────────────────────────────────────────────────
 RAG_TOP_K = 3
 RAG_SIMILARITY_THRESHOLD = 0.3
+
+# ── Lingua ─────────────────────────────────────────────────
+DEFAULT_LANG = "it"
+
+# ── Traduzione (modello veloce per cambio lingua UI) ──────────
+TRANSLATION_MODEL = "google/gemini-flash-1.5"
+TRANSLATION_TEMPERATURE = 0.2
+TRANSLATION_TIMEOUT = 30

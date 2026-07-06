@@ -1,13 +1,13 @@
+import os
 from flask import Flask, render_template, request, jsonify
 from src.generator import (
     generate_microlearning_path,
+    valuta_con_pipeline,
     valuta_risposta,
     genera_spiegazione_alternativa,
     genera_saluto_finale,
     genera_riepilogo_finale,
     genera_hint,
-    valida_input_euristico,
-    sanity_check_risposta,
 )
 from src.database import (
     init_db,
@@ -21,8 +21,14 @@ from src.database import (
     get_module_attempts,
 )
 from src.config import RAG_TOP_K
+from src.i18n import tr
 
 app = Flask(__name__)
+
+
+def _get_lang():
+    data = request.json or {}
+    return data.get('lang', request.args.get('lang', 'it'))
 
 
 @app.route('/')
@@ -32,17 +38,18 @@ def index():
 
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
+    lang = _get_lang()
     data = request.json or {}
     topic = data.get('topic', '').strip()
     level = data.get('level', '').strip().lower()
     name = data.get('name', '').strip() or 'Studente'
 
     if not topic or not level:
-        return jsonify({'success': False, 'error': 'Topic e livello sono obbligatori.'}), 400
+        return jsonify({'success': False, 'error': tr('api_topic_level', lang)}), 400
 
     try:
         context = find_similar_modules(topic, top_k=RAG_TOP_K) or None
-        tutor_response = generate_microlearning_path(topic, level, context_modules=context)
+        tutor_response = generate_microlearning_path(topic, level, context_modules=context, lang=lang)
         modules_data = [m.model_dump() for m in tutor_response.percorso_studio.moduli]
         sid = save_session(topic, level, modules_data)
         db_modules = get_session_modules(sid)
@@ -59,30 +66,24 @@ def api_generate():
 
 @app.route('/api/evaluate', methods=['POST'])
 def api_evaluate():
+    lang = _get_lang()
     data = request.json or {}
     esercizio = data.get('esercizio', '').strip()
     soluzione = data.get('soluzione', '').strip()
     module_db_id = data.get('module_db_id')
 
     if not esercizio or not soluzione:
-        return jsonify({'success': False, 'error': 'Esercizio e soluzione sono obbligatori.'}), 400
+        return jsonify({'success': False, 'error': tr('api_exercise_solution', lang)}), 400
 
-    # Opzione A — Filtro euristico (gratuito, immediato)
-    valido, motivo = valida_input_euristico(esercizio, soluzione)
-    if not valido:
-        return jsonify({'success': False, 'error': motivo, 'reason': 'heuristic_invalid'}), 422
+    pipeline = valuta_con_pipeline(esercizio, soluzione, data.get('livello', 'base'), lang,
+                                   tentativi=data.get('tentativi', 0))
 
-    # Opzione C — Sanity check LLM (leggero)
-    pertinente, motivo_sc = sanity_check_risposta(esercizio, soluzione)
-    if not pertinente:
-        msg = "La risposta non sembra pertinente all'esercizio"
-        if motivo_sc:
-            msg += f": {motivo_sc}"
-        return jsonify({'success': False, 'error': msg, 'reason': 'not_pertinent'}), 422
+    if not pipeline["valido"]:
+        reason = 'heuristic_invalid' if 'troppo corta' in pipeline['message'] or 'random' in pipeline['message'].lower() else 'not_pertinent'
+        return jsonify({'success': False, 'error': pipeline['message'], 'reason': reason}), 422
 
     try:
-        # Opzione B — Valutazione completa (prompt arricchito)
-        feedback = valuta_risposta(esercizio, soluzione)
+        feedback = pipeline["feedback"]
         esito = feedback.esito or "sbagliata"
 
         if module_db_id:
@@ -93,6 +94,7 @@ def api_evaluate():
             'esito': esito,
             'commento_costruttivo': feedback.commento_costruttivo,
             'suggerimento_miglioramento': feedback.suggerimento_miglioramento,
+            'hint': pipeline.get('hint'),
         }), 200
     except Exception as exc:
         return jsonify({'success': False, 'error': str(exc)}), 500
@@ -100,6 +102,7 @@ def api_evaluate():
 
 @app.route('/api/hint', methods=['POST'])
 def api_hint():
+    lang = _get_lang()
     data = request.json or {}
     esercizio = data.get('esercizio', '').strip()
     soluzione = data.get('soluzione', '').strip()
@@ -107,10 +110,10 @@ def api_hint():
     tentativo = data.get('tentativo', 1)
 
     if not esercizio or not soluzione or not livello:
-        return jsonify({'success': False, 'error': 'Esercizio, soluzione e livello sono obbligatori.'}), 400
+        return jsonify({'success': False, 'error': tr('api_exercise_solution_level', lang)}), 400
 
     try:
-        hint = genera_hint(esercizio, soluzione, livello, int(tentativo))
+        hint = genera_hint(esercizio, soluzione, livello, int(tentativo), lang)
         return jsonify({'success': True, 'hint': hint}), 200
     except Exception as exc:
         return jsonify({'success': False, 'error': str(exc)}), 500
@@ -118,10 +121,11 @@ def api_hint():
 
 @app.route('/api/archive-module', methods=['POST'])
 def api_archive_module():
+    lang = _get_lang()
     data = request.json or {}
     module_db_id = data.get('module_db_id')
     if not module_db_id:
-        return jsonify({'success': False, 'error': 'module_db_id obbligatorio.'}), 400
+        return jsonify({'success': False, 'error': tr('api_module_db_id', lang)}), 400
     try:
         update_module_state(module_db_id, archived=True)
         return jsonify({'success': True}), 200
@@ -131,10 +135,11 @@ def api_archive_module():
 
 @app.route('/api/complete-module', methods=['POST'])
 def api_complete_module():
+    lang = _get_lang()
     data = request.json or {}
     module_db_id = data.get('module_db_id')
     if not module_db_id:
-        return jsonify({'success': False, 'error': 'module_db_id obbligatorio.'}), 400
+        return jsonify({'success': False, 'error': tr('api_module_db_id', lang)}), 400
     try:
         update_module_state(module_db_id, completed=True)
         return jsonify({'success': True}), 200
@@ -153,10 +158,11 @@ def api_history():
 
 @app.route('/api/session-detail', methods=['POST'])
 def api_session_detail():
+    lang = _get_lang()
     data = request.json or {}
     session_id = data.get('session_id')
     if not session_id:
-        return jsonify({'success': False, 'error': 'session_id obbligatorio.'}), 400
+        return jsonify({'success': False, 'error': tr('api_session_id', lang)}), 400
     try:
         modules = get_session_modules(int(session_id))
         result = []
@@ -170,6 +176,7 @@ def api_session_detail():
 
 @app.route('/api/clarify', methods=['POST'])
 def api_clarify():
+    lang = _get_lang()
     data = request.json or {}
     argomento = data.get('argomento', '').strip()
     spiegazione = data.get('spiegazione', '').strip()
@@ -177,10 +184,10 @@ def api_clarify():
     livello = data.get('livello', '').strip().lower()
 
     if not argomento or not spiegazione or not dubbio or not livello:
-        return jsonify({'success': False, 'error': 'Argomento, spiegazione, dubbio e livello sono obbligatori.'}), 400
+        return jsonify({'success': False, 'error': tr('api_topic_explanation_doubt_level', lang)}), 400
 
     try:
-        result = genera_spiegazione_alternativa(argomento, spiegazione, dubbio, livello)
+        result = genera_spiegazione_alternativa(argomento, spiegazione, dubbio, livello, lang)
         return jsonify({'success': True, 'data': result}), 200
     except Exception as exc:
         return jsonify({'success': False, 'error': str(exc)}), 500
@@ -188,6 +195,7 @@ def api_clarify():
 
 @app.route('/api/final-summary', methods=['POST'])
 def api_final_summary():
+    lang = _get_lang()
     data = request.json or {}
     solutions = data.get('solutions')
     diary = data.get('diary', [])
@@ -195,10 +203,10 @@ def api_final_summary():
     session_id = data.get('session_id')
 
     if not isinstance(solutions, list) or not livello:
-        return jsonify({'success': False, 'error': 'Soluzioni e livello sono obbligatori.'}), 400
+        return jsonify({'success': False, 'error': tr('api_solutions_level', lang)}), 400
 
     try:
-        riepilogo = genera_riepilogo_finale(solutions, diary, livello)
+        riepilogo = genera_riepilogo_finale(solutions, diary, livello, lang)
         if session_id:
             save_riepilogo(int(session_id), riepilogo.model_dump_json())
         return jsonify({'success': True, 'data': riepilogo.model_dump()}), 200
@@ -208,21 +216,36 @@ def api_final_summary():
 
 @app.route('/api/saluto', methods=['POST'])
 def api_saluto():
+    lang = _get_lang()
     data = request.json or {}
     nome = data.get('nome', '').strip() or 'Studente'
     livello = data.get('livello', '').strip().lower()
     interruzione = data.get('interruzione', False)
 
     if not livello:
-        return jsonify({'success': False, 'error': 'Il livello è obbligatorio.'}), 400
+        return jsonify({'success': False, 'error': tr('api_level_required', lang)}), 400
 
     try:
-        saluto = genera_saluto_finale(nome, livello, bool(interruzione))
+        saluto = genera_saluto_finale(nome, livello, bool(interruzione), lang)
         return jsonify({'success': True, 'saluto': saluto}), 200
     except Exception as exc:
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 
+@app.route('/api/translations', methods=['GET'])
+def api_translations():
+    """Serve translations to the frontend, avoiding duplicated JS dictionaries."""
+    from src.i18n import TRANSLATIONS, SUPPORTED_LANGS
+    lang = request.args.get('lang', 'it')
+    if lang not in SUPPORTED_LANGS:
+        lang = 'it'
+    flat = {}
+    for key, entry in TRANSLATIONS.items():
+        flat[key] = entry.get(lang, entry.get('it', key))
+    return jsonify({'success': True, 'lang': lang, 'translations': flat}), 200
+
+
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True)
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug)

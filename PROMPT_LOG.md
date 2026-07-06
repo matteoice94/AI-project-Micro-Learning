@@ -160,3 +160,29 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Azione:** Integrato il robot in login, welcome, sidebar e sotto i pulsanti di azione.
   - **Obiettivo:** Feedback visivo immediato sullo stato dell'operazione (in attesa, in elaborazione, completata).
   - **Risultato:** State machine: neutro (idle) → thinking (elaborazione) → happy (successo). Il robot segue l'azione attiva (valutazione o chiarimenti), mutuamente esclusivo.
+
+## [6 Luglio 2026] - Internazionalizzazione IT/EN
+- **Azione:** Creato modulo `src/i18n.py` con dizionario centralizzato ~260 chiavi per italiano e inglese.
+- **Obiettivo:** Supporto lingua su tutte le interfacce (Streamlit, Flask/HTML, CLI).
+- **Risultato:** Selettore lingua in sidebar e login page. Tutti i testi UI tradotti via `tr()`. LLM prompt e output automaticamente nella lingua selezionata (system_mlpg_en.md).
+
+## [6 Luglio 2026] - Traduzione moduli on-the-fly
+- **Azione:** Aggiunte funzioni `traduci_percorso_completo()` e `traduci_modulo_singolo()` in `src/generator.py`.
+- **Obiettivo:** Cambiando lingua, i moduli già generati vengono tradotti via LLM. Le risposte salvate dell'utente NON vengono mai tradotte.
+- **Risultato:** `_sync_lang()` traduce percorso attivo + archiviati + storico (con cache). Modello di traduzione: `google/gemini-flash-1.5` (veloce).
+
+## [6 Luglio 2026] - Pipeline valutazione unificata
+- **Azione:** Creata `valuta_con_pipeline()` in `src/generator.py` (heuristic → sanity → LLM eval → hint → archive).
+- **Obiettivo:** Eliminare 130+ righe duplicate tra streamlit_app.py, app.py, main.py.
+- **Risultato:** Streamlit, Flask e CLI usano la stessa funzione.
+
+## [6 Luglio 2026] - Bilanciamento esito valutazione
+- **Azione:** Aggiornati i prompt di valutazione (IT e EN) per rendere "sbagliata" più frequente e "parziale" più selettivo.
+- **Obiettivo:** Evitare che qualsiasi risposta venga classificata come "parziale" impedendo l'archiviazione dopo 2 errori.
+- **Modifica:** Regola esplicita: "parziale" = l'utente ha azzeccato qualcosa. Risposte sbagliate/imprecise/incomplete → "sbagliata". Incoraggiamento nel commento, non nell'esito.
+- **Heuristic filter:** Passato da match esatto a substring per catturare risposte come "non lo so, mi dispiace".
+
+## [6 Luglio 2026] - Sanity check: "non lo so" ora considerato pertinente
+- **Azione:** Aggiornato il prompt del sanity check (IT e EN) per escludere le ammissioni di difficoltà dai criteri "non pertinente".
+- **Obiettivo:** Evitare che "non lo so" venga bloccato con messaggi passivo-aggressivi ("non dimostra alcuno sforzo").
+- **Risultato:** "non lo so" passa il sanity check e arriva alla valutazione, che risponde in modo incoraggiante.

@@ -67,51 +67,59 @@
         .history-entry:last-child { border-bottom: none; }
         .history-toggle { cursor: pointer; padding: 8px; border-radius: 10px; transition: background .15s; }
         .history-toggle:hover { background: #f0f4f8; }
+        .lang-selector { display: flex; gap: 8px; margin-bottom: 16px; }
+        .lang-selector button { padding: 6px 14px; font-size: .85rem; border-radius: 8px; width: auto; }
+        .lang-selector button.active-lang { background: var(--primary); color: #fff; }
     </style>
 </head>
 <body>
+    <div style="text-align:right; padding:8px 20px; background:#fff; border-bottom:1px solid var(--border);">
+        <span style="margin-right:10px;font-size:.9rem;color:var(--muted);" id="langLabel">Lingua / Language:</span>
+        <button onclick="switchLang('it')" id="btnLangIT" style="width:auto;padding:4px 14px;margin:0 4px;font-size:.85rem;">🇮🇹 IT</button>
+        <button onclick="switchLang('en')" id="btnLangEN" style="width:auto;padding:4px 14px;margin:0 4px;font-size:.85rem;">🇬🇧 EN</button>
+    </div>
     <div class="layout">
         <aside class="sidebar">
             <div class="sidebar-section">
-                <h3>Moduli da riprendere</h3>
+                <h3 id="sidebarArchivedTitle">Moduli da riprendere</h3>
                 <div id="archivedList">
-                    <p class="small-text">Nessun modulo archiviato.</p>
+                    <p class="small-text" id="noArchivedMsg">Nessun modulo archiviato.</p>
                 </div>
             </div>
             <div class="sidebar-section">
-                <h3>Storico sessioni</h3>
+                <h3 id="sidebarHistoryTitle">Storico sessioni</h3>
                 <div id="historyList">
-                    <p class="small-text">Caricamento...</p>
+                    <p class="small-text" id="loadingMsg">Caricamento...</p>
                 </div>
             </div>
         </aside>
 
         <main class="main">
             <div class="card">
-                <h1>MLPG Tutor Web</h1>
-                <p>Genera il percorso, rispondi agli esercizi e ricevi feedback, suggerimenti e chiarimenti mirati.</p>
+                <h1 id="mainHeading">MLPG Tutor Web</h1>
+                <p id="mainDescription">Genera il percorso, rispondi agli esercizi e ricevi feedback, suggerimenti e chiarimenti mirati.</p>
             </div>
 
             <div class="card">
                 <div id="message" class="error"></div>
-                <label>Argomento</label>
+                <label id="lblTopic">Argomento</label>
                 <input id="topic" placeholder="Esempio: programmazione Python" />
-                <label>Livello</label>
+                <label id="lblLevel">Livello</label>
                 <select id="level">
-                    <option value="">Seleziona...</option>
-                    <option value="base">Base</option>
-                    <option value="intermedio">Intermedio</option>
-                    <option value="avanzato">Avanzato</option>
+                    <option value="" id="optSelect">Seleziona...</option>
+                    <option value="base" id="optBase">Base</option>
+                    <option value="intermedio" id="optIntermedio">Intermedio</option>
+                    <option value="avanzato" id="optAvanzato">Avanzato</option>
                 </select>
-                <label>Nome (opzionale)</label>
+                <label id="lblName">Nome (opzionale)</label>
                 <input id="name" placeholder="Es. Matteo" />
-                <button style="margin-top: 12px;" onclick="generatePath()">Genera percorso</button>
+                <button style="margin-top: 12px;" onclick="generatePath()" id="btnGenerate">Genera percorso</button>
             </div>
 
             <div id="pathContainer"></div>
 
             <div id="summaryCard" class="card hidden">
-                <h2>Riepilogo sessione</h2>
+                <h2 id="summaryTitle">Riepilogo sessione</h2>
                 <div id="summaryContent"></div>
                 <button id="generateSummaryButton" style="margin-top: 16px;" onclick="generateFinalSummary()">Genera riepilogo finale</button>
                 <div id="salutoText" style="margin-top: 18px; font-size: 1rem; line-height: 1.7;"></div>
@@ -120,6 +128,7 @@
     </div>
 
     <script>
+let currentLang = 'it';
         let currentResponse = null;
         let currentModuleIndex = 0;
         let currentSessionId = null;
@@ -134,12 +143,77 @@
         let moduliDbIds = {};
         let moduliState = {};
 
+        let _T = {};
+
+        function t(key) {
+            return _T[key] || key;
+        }
+
+        async function loadTranslations(lang) {
+            try {
+                const res = await fetch(`/api/translations?lang=${lang}`);
+                const data = await res.json();
+                if (data.success) {
+                    _T = data.translations;
+                    currentLang = lang;
+                }
+            } catch (e) { /* keep current translations */ }
+        }
+
+        async function switchLang(lang) {
+            await loadTranslations(lang);
+            document.getElementById('btnLangIT').className = lang === 'it' ? 'active-lang' : '';
+            document.getElementById('btnLangEN').className = lang === 'en' ? 'active-lang' : '';
+            document.documentElement.lang = lang;
+            updateAllLabels();
+            if (currentResponse) { renderPath(); }
+            loadHistory();
+            renderArchivedSidebar();
+            updateSummary();
+        }
+
+        function switchLang(lang) {
+            currentLang = lang;
+            document.getElementById('btnLangIT').className = lang === 'it' ? 'active-lang' : '';
+            document.getElementById('btnLangEN').className = lang === 'en' ? 'active-lang' : '';
+            document.documentElement.lang = lang;
+            updateAllLabels();
+            if (currentResponse) { renderPath(); }
+            loadHistory();
+            renderArchivedSidebar();
+            updateSummary();
+        }
+
+        function updateAllLabels() {
+            document.getElementById('lblTopic').textContent = t('html_topic_label');
+            document.getElementById('lblLevel').textContent = t('html_level_label');
+            document.getElementById('lblName').textContent = t('html_name_label');
+            document.getElementById('topic').placeholder = t('html_topic_placeholder');
+            document.getElementById('name').placeholder = t('html_name_placeholder');
+            document.getElementById('btnGenerate').textContent = t('html_generate_btn');
+            document.getElementById('mainHeading').textContent = t('html_main_heading');
+            document.getElementById('mainDescription').textContent = t('html_main_description');
+            document.getElementById('sidebarArchivedTitle').textContent = t('html_archived_sidebar');
+            document.getElementById('sidebarHistoryTitle').textContent = t('html_history_sidebar');
+            document.getElementById('optSelect').textContent = t('html_level_select');
+            document.getElementById('optBase').textContent = t('html_base');
+            document.getElementById('optIntermedio').textContent = t('html_intermediate');
+            document.getElementById('optAvanzato').textContent = t('html_advanced');
+            document.getElementById('summaryTitle').textContent = t('html_summary_title');
+            document.getElementById('generateSummaryButton').textContent = t('html_summary_generate_btn');
+            document.getElementById('langLabel').textContent = t('lang_label');
+        }
+
         function setMessage(text) {
             const msg = document.getElementById('message');
             msg.textContent = text;
         }
 
-        document.addEventListener('DOMContentLoaded', loadHistory);
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadTranslations('it');
+            updateAllLabels();
+            loadHistory();
+        });
 
         async function loadHistory() {
             try {
@@ -153,7 +227,7 @@
         function renderHistory(sessions) {
             const el = document.getElementById('historyList');
             if (!sessions.length) {
-                el.innerHTML = '<p class="small-text">Nessuna sessione passata.</p>';
+                el.innerHTML = `<p class="small-text">${t('html_no_sessions')}</p>`;
                 return;
             }
             el.innerHTML = sessions.map(s => `
@@ -189,14 +263,18 @@
                 detail.dataset.loaded = '1';
                 const modules = data.data;
                 detail.innerHTML = modules.map(m => {
-                    const statusTag = m.archived ? '<span class="tag tag-archived">Archiviato</span>' : m.completed ? '<span class="tag" style="background:#dcfce7;color:#166534;">Completato</span>' : '';
+                    const statusTag = m.archived
+                        ? `<span class="tag tag-archived">${t('html_archived_badge')}</span>`
+                        : m.completed
+                            ? `<span class="tag" style="background:#dcfce7;color:#166534;">${t('html_completed_badge')}</span>`
+                            : '';
                     const attempts = (m.attempts || []).map(a =>
                         `<div class="small-text">→ ${a.esito || 'sbagliata'}: ${a.soluzione.substring(0, 60)}</div>`
                     ).join('');
                     return `
                         <div style="padding: 8px 0; border-bottom:1px solid #eee;">
                             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                                <span>Modulo ${m.module_index + 1}</span> ${statusTag}
+                                <span>${t('html_modules_list').split(' ')[0] || 'Module'} ${m.module_index + 1}</span> ${statusTag}
                             </div>
                             ${attempts ? `<div style="margin-top:4px;">${attempts}</div>` : ''}
                         </div>
@@ -213,7 +291,7 @@
             const name = document.getElementById('name').value.trim();
 
             if (!topic || !level) {
-                setMessage('Argomento e livello sono obbligatori.');
+                setMessage(t('html_topic_level_error'));
                 return;
             }
 
@@ -221,12 +299,12 @@
                 const res = await fetch('/api/generate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ topic, level, name }),
+                    body: JSON.stringify({ topic, level, name, lang: currentLang }),
                 });
                 const data = await res.json();
 
                 if (!data.success) {
-                    setMessage(data.error || 'Errore nella generazione.');
+                    setMessage(data.error || t('html_generation_error'));
                     return;
                 }
 
@@ -252,7 +330,7 @@
                 renderArchivedSidebar();
                 loadHistory();
             } catch (err) {
-                setMessage('Errore di connessione. Riprova.');
+                setMessage(t('html_connection_error'));
             }
         }
 
@@ -264,9 +342,9 @@
             const header = document.createElement('div');
             header.className = 'card';
             header.innerHTML = `
-                <h2>Obiettivo di apprendimento</h2>
+                <h2>${t('html_learning_objective')}</h2>
                 <p>${percorso_studio.metadati.objective_apprendimento}</p>
-                <div class="badge">Livello: ${percorso_studio.metadati.difficolta_impostata}</div>
+                <div class="badge">${t('html_level_badge')}: ${percorso_studio.metadati.difficolta_impostata}</div>
                 <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
             `;
             container.appendChild(header);
@@ -280,7 +358,7 @@
                 if (state.archived) extra = 'archived';
                 else if (state.completed) extra = 'completed';
                 tab.className = `tab ${index === currentModuleIndex && currentArchiveView === null ? 'active' : ''} ${extra}`;
-                tab.textContent = `Modulo ${modulo.id}`;
+                tab.textContent = `${t('html_modules_list').split(' ')[0] || 'Module'} ${modulo.id}`;
                 if (state.archived) tab.textContent += ' 📦';
                 else if (state.completed) tab.textContent += ' ✅';
                 tab.onclick = () => { currentArchiveView = null; changeModule(index); };
@@ -300,7 +378,6 @@
             const moduleWrapper = document.getElementById('moduleDetail');
             moduleWrapper.innerHTML = '';
 
-            // If viewing an archived module
             if (currentArchiveView !== null) {
                 renderArchivedModuleView(moduleWrapper);
                 return;
@@ -312,8 +389,8 @@
             if (state.archived) {
                 moduleWrapper.innerHTML = `
                     <div class="card archive-box">
-                        <h3>Modulo ${module.id}: ${module.titolo_modulo}</h3>
-                        <p>📦 Questo modulo è stato archiviato. Puoi riprenderlo dalla sidebar "Moduli da riprendere".</p>
+                        <h3>${t('html_modules_list').split(' ')[0] || 'Module'} ${module.id}: ${module.titolo_modulo}</h3>
+                        <p>📦 ${t('html_archived_msg')}</p>
                     </div>
                 `;
                 return;
@@ -324,30 +401,32 @@
             card.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
                     <div>
-                        <h3>Modulo ${module.id}: ${module.titolo_modulo}</h3>
-                        ${state.completed ? '<div class="badge badge-success">✅ Completato</div>' : '<div class="badge">In corso</div>'}
+                        <h3>${t('html_modules_list').split(' ')[0] || 'Module'} ${module.id}: ${module.titolo_modulo}</h3>
+                        ${state.completed
+                            ? `<div class="badge badge-success">✅ ${t('html_completed_badge')}</div>`
+                            : `<div class="badge">${t('html_in_progress_badge')}</div>`}
                     </div>
                     <div style="text-align:right;">
-                        <div class="small-text">Moduli totali: ${currentResponse.percorso_studio.moduli.length}</div>
-                        <div class="small-text">Modulo attuale: ${currentModuleIndex + 1}</div>
+                        <div class="small-text">${t('html_modules_list')}: ${currentResponse.percorso_studio.moduli.length}</div>
+                        <div class="small-text">${t('html_current_module')}: ${currentModuleIndex + 1}</div>
                     </div>
                 </div>
-                <p><strong>Spiegazione</strong></p>
+                <p><strong>${t('html_explanation_label')}</strong></p>
                 <p>${module.spiegazione}</p>
-                <p><strong>Esercizio</strong></p>
+                <p><strong>${t('html_exercise_label')}</strong></p>
                 <p>${module.esercizio_pratico}</p>
                 <div id="feedback-${module.id}"></div>
                 <div id="hintArea-${module.id}"></div>
                 ${!state.completed ? `
-                    <label>La tua soluzione</label>
-                    <textarea id="solution-${module.id}" rows="5" placeholder="Inserisci qui la tua risposta..."></textarea>
-                    <button onclick="evaluateModule(${module.id})" style="margin-top:12px;">Valuta soluzione</button>
-                    <button onclick="showClarify(${module.id})" class="warning" style="margin-top:12px;">Chiedi chiarimenti</button>
+                    <label>${t('html_solution_label')}</label>
+                    <textarea id="solution-${module.id}" rows="5" placeholder="${t('html_solution_placeholder')}"></textarea>
+                    <button onclick="evaluateModule(${module.id})" style="margin-top:12px;">${t('html_eval_btn')}</button>
+                    <button onclick="showClarify(${module.id})" class="warning" style="margin-top:12px;">${t('html_clarify_btn')}</button>
                     <div id="clarify-${module.id}" class="hidden clarification"></div>
                 ` : ''}
                 <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:18px;">
-                    <button onclick="prevModule()" class="secondary" style="flex:1;">Modulo precedente</button>
-                    <button onclick="nextModule()" style="flex:1;">Modulo successivo</button>
+                    <button onclick="prevModule()" class="secondary" style="flex:1;">${t('html_prev_module')}</button>
+                    <button onclick="nextModule()" style="flex:1;">${t('html_next_module')}</button>
                 </div>
             `;
             moduleWrapper.appendChild(card);
@@ -364,20 +443,20 @@
             card.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
                     <div>
-                        <h3>📦 Modulo ${modulo.id}: ${modulo.titolo_modulo}</h3>
-                        <div class="badge badge-warning">Da riprendere</div>
+                        <h3>📦 ${t('html_modules_list').split(' ')[0] || 'Module'} ${modulo.id}: ${modulo.titolo_modulo}</h3>
+                        <div class="badge badge-warning">${t('html_retake_badge')}</div>
                     </div>
                 </div>
-                <p><strong>Spiegazione</strong></p>
+                <p><strong>${t('html_explanation_label')}</strong></p>
                 <p>${modulo.spiegazione}</p>
-                <p><strong>Esercizio</strong></p>
+                <p><strong>${t('html_exercise_label')}</strong></p>
                 <p>${modulo.esercizio_pratico}</p>
                 <div id="archiveFeedback-${modulo.id}"></div>
                 <div id="archiveHintArea-${modulo.id}"></div>
-                <label>La tua soluzione</label>
-                <textarea id="archiveSolution-${modulo.id}" rows="5" placeholder="Riprova a risolvere l'esercizio..."></textarea>
-                <button onclick="evaluateArchivedModule(${modulo.id})" style="margin-top:12px;">Valuta soluzione</button>
-                <button onclick="closeArchiveView()" class="secondary" style="margin-top:12px;">Chiudi vista archivio</button>
+                <label>${t('html_solution_label')}</label>
+                <textarea id="archiveSolution-${modulo.id}" rows="5" placeholder="${t('html_retry_placeholder')}"></textarea>
+                <button onclick="evaluateArchivedModule(${modulo.id})" style="margin-top:12px;">${t('html_eval_btn')}</button>
+                <button onclick="closeArchiveView()" class="secondary" style="margin-top:12px;">${t('html_close_archive')}</button>
                 <div id="archiveClarify-${modulo.id}" class="clarification hidden"></div>
             `;
             wrapper.appendChild(card);
@@ -431,7 +510,7 @@
             const state = moduliState[moduleId];
 
             if (!solution) {
-                setMessage('Inserisci una soluzione prima di valutare.');
+                setMessage(t('html_insert_solution'));
                 return;
             }
 
@@ -443,13 +522,14 @@
                         esercizio: modulo.esercizio_pratico,
                         soluzione: solution,
                         module_db_id: moduliDbIds[moduleId],
+                        lang: currentLang,
                     }),
                 });
                 const data = await res.json();
                 const feedbackDiv = document.getElementById(`feedback-${moduleId}`);
 
                 if (!data.success) {
-                    feedbackDiv.innerHTML = `<p class="error">${data.error || 'Errore nella valutazione.'}</p>`;
+                    feedbackDiv.innerHTML = `<p class="error">${data.error || t('html_eval_error')}</p>`;
                     return;
                 }
 
@@ -467,9 +547,9 @@
                     }
                     puntiForza.push(data.commento_costruttivo);
                     feedbackDiv.innerHTML = `
-                        <div class="badge badge-success">✅ Corretta!</div>
-                        <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
-                        <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
+                        <div class="badge badge-success">✅ ${t('html_correct_status')}</div>
+                        <p><strong>${t('html_comment_label')}:</strong> ${data.commento_costruttivo}</p>
+                        <p><strong>${t('html_suggestion_label')}:</strong> ${data.suggerimento_miglioramento}</p>
                     `;
                     document.getElementById(`hintArea-${moduleId}`).innerHTML = '';
                     renderModule();
@@ -477,7 +557,6 @@
                     return;
                 }
 
-                // Risposta sbagliata o parziale
                 const sameAnswer = state.ultimaRisposta === solution;
                 if (!sameAnswer) {
                     state.tentativi += 1;
@@ -486,10 +565,10 @@
 
                 feedbackDiv.innerHTML = `
                     <div class="badge ${esito === 'parziale' ? 'badge-warning' : 'badge-error'}">
-                        ${esito === 'parziale' ? '🤔 Parziale' : '😅 Sbagliata'}
+                        ${esito === 'parziale' ? '🤔 ' + t('html_partial_status') : '😅 ' + t('html_wrong_status')}
                     </div>
-                    <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
-                    <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
+                    <p><strong>${t('html_comment_label')}:</strong> ${data.commento_costruttivo}</p>
+                    <p><strong>${t('html_suggestion_label')}:</strong> ${data.suggerimento_miglioramento}</p>
                 `;
 
                 if (state.tentativi >= 2 && !sameAnswer) {
@@ -502,10 +581,10 @@
                             body: JSON.stringify({ module_db_id: moduliDbIds[moduleId] }),
                         });
                     }
-                    diarioNote.push(`Modulo ${modulo.id} (${modulo.titolo_modulo}): archiviato dopo 2 tentativi`);
+                    diarioNote.push(`Module ${modulo.id} (${modulo.titolo_modulo}): archived after 2 attempts`);
                     document.getElementById(`hintArea-${moduleId}`).innerHTML = `
                         <div class="archive-box">
-                            <p>📦 Questo modulo è stato archiviato. Potrai riprenderlo in un secondo momento dalla sidebar "Moduli da riprendere".</p>
+                            <p>📦 ${t('html_archived_after')}</p>
                         </div>
                     `;
                     renderModule();
@@ -514,7 +593,6 @@
                     return;
                 }
 
-                // Primo tentativo — mostra hint
                 if (!sameAnswer) {
                     try {
                         const hintRes = await fetch('/api/hint', {
@@ -525,34 +603,36 @@
                                 soluzione: solution,
                                 livello: document.getElementById('level').value,
                                 tentativo: state.tentativi,
+                                lang: currentLang,
                             }),
                         });
                         const hintData = await hintRes.json();
-                        const hintText = hintData.success ? hintData.hint : 'Rileggi la spiegazione e prova con un approccio diverso.';
+                        const hintText = hintData.success ? hintData.hint : t('html_same_answer');
+                        const hintHeader = t('html_hint_prefix').replace('{count}', state.tentativi);
                         document.getElementById(`hintArea-${moduleId}`).innerHTML = `
                             <div class="hint-box">
-                                <strong>💡 Suggerimento (tentativo ${state.tentativi}/2):</strong>
+                                <strong>💡 ${hintHeader}:</strong>
                                 <p style="margin-top:6px;">${hintText}</p>
                             </div>
                         `;
                     } catch (e) {
                         document.getElementById(`hintArea-${moduleId}`).innerHTML = `
                             <div class="hint-box">
-                                <strong>💡 Suggerimento:</strong>
-                                <p style="margin-top:6px;">Rileggi la spiegazione e prova con un approccio diverso.</p>
+                                <strong>💡 ${t('html_hint_simple')}:</strong>
+                                <p style="margin-top:6px;">${t('html_same_answer')}</p>
                             </div>
                         `;
                     }
                 } else {
                     document.getElementById(`hintArea-${moduleId}`).innerHTML = `
                         <div class="hint-box">
-                            <p>ℹ️ Hai inviato la stessa risposta. Rileggi il suggerimento sopra e prova con un approccio diverso.</p>
+                            <p>ℹ️ ${t('html_same_answer')}</p>
                         </div>
                     `;
                 }
                 updateSummary();
             } catch (err) {
-                setMessage('Errore di connessione durante la valutazione.');
+                setMessage(t('html_connection_eval_error'));
             }
         }
 
@@ -562,7 +642,7 @@
             const modulo = currentArchiveView.modulo;
 
             if (!solution) {
-                setMessage('Inserisci una soluzione prima di valutare.');
+                setMessage(t('html_insert_solution'));
                 return;
             }
 
@@ -574,13 +654,14 @@
                         esercizio: modulo.esercizio_pratico,
                         soluzione: solution,
                         module_db_id: null,
+                        lang: currentLang,
                     }),
                 });
                 const data = await res.json();
                 const feedbackDiv = document.getElementById(`archiveFeedback-${moduleId}`);
 
                 if (!data.success) {
-                    feedbackDiv.innerHTML = `<p class="error">${data.error || 'Errore.'}</p>`;
+                    feedbackDiv.innerHTML = `<p class="error">${data.error || t('html_error_label')}</p>`;
                     return;
                 }
 
@@ -590,10 +671,11 @@
                 if (esito === 'parziale') { badgeClass = 'badge-warning'; icon = '🤔'; }
                 else if (esito === 'sbagliata') { badgeClass = 'badge-error'; icon = '😅'; }
 
+                const esitoLabel = esito === 'corretta' ? t('html_correct_status') : esito === 'parziale' ? t('html_partial_status') : t('html_wrong_status');
                 feedbackDiv.innerHTML = `
-                    <div class="badge ${badgeClass}">${icon} ${esito === 'corretta' ? 'Corretta!' : esito === 'parziale' ? 'Parziale' : 'Sbagliata'}</div>
-                    <p><strong>Commento:</strong> ${data.commento_costruttivo}</p>
-                    <p><strong>Suggerimento:</strong> ${data.suggerimento_miglioramento}</p>
+                    <div class="badge ${badgeClass}">${icon} ${esitoLabel}</div>
+                    <p><strong>${t('html_comment_label')}:</strong> ${data.commento_costruttivo}</p>
+                    <p><strong>${t('html_suggestion_label')}:</strong> ${data.suggerimento_miglioramento}</p>
                 `;
 
                 if (esito !== 'corretta') {
@@ -606,40 +688,41 @@
                                 soluzione: solution,
                                 livello: currentArchiveView.livello || document.getElementById('level').value,
                                 tentativo: 1,
+                                lang: currentLang,
                             }),
                         });
                         const hintData = await hintRes.json();
-                        const hintText = hintData.success ? hintData.hint : 'Rileggi la spiegazione e riprova.';
+                        const hintText = hintData.success ? hintData.hint : t('html_same_answer');
                         document.getElementById(`archiveHintArea-${moduleId}`).innerHTML = `
                             <div class="hint-box">
-                                <strong>💡 Suggerimento:</strong>
+                                <strong>💡 ${t('html_hint_simple')}:</strong>
                                 <p style="margin-top:6px;">${hintText}</p>
                             </div>
                         `;
                     } catch (e) {
                         document.getElementById(`archiveHintArea-${moduleId}`).innerHTML = `
                             <div class="hint-box">
-                                <strong>💡 Suggerimento:</strong>
-                                <p style="margin-top:6px;">Rileggi la spiegazione e riprova.</p>
+                                <strong>💡 ${t('html_hint_simple')}:</strong>
+                                <p style="margin-top:6px;">${t('html_same_answer')}</p>
                             </div>
                         `;
                     }
                 }
             } catch (err) {
-                setMessage('Errore di connessione.');
+                setMessage(t('html_connection_error'));
             }
         }
 
         function renderArchivedSidebar() {
             const el = document.getElementById('archivedList');
             if (!archiveModules.length) {
-                el.innerHTML = '<p class="small-text">Nessun modulo archiviato.</p>';
+                el.innerHTML = `<p class="small-text">${t('html_no_archived')}</p>`;
                 return;
             }
             el.innerHTML = archiveModules.map((m, i) => `
                 <div class="sidebar-item" onclick="openArchivedModule(${i})">
                     📦 ${m.titolo}
-                    <span class="tag tag-archived">Archiviato</span>
+                    <span class="tag tag-archived">${t('html_archived_badge')}</span>
                 </div>
             `).join('');
         }
@@ -672,9 +755,9 @@
             }
             clarifyDiv.classList.remove('hidden');
             clarifyDiv.innerHTML = `
-                <label>Qual è il dubbio specifico?</label>
-                <textarea id="dubbio-${moduleId}" rows="3" placeholder="Esempio: non capisco il ciclo for"></textarea>
-                <button onclick="clarifyModule(${moduleId})" class="warning" style="margin-top:10px;">Genera spiegazione mirata</button>
+                <label>${t('html_doubt_label')}</label>
+                <textarea id="dubbio-${moduleId}" rows="3" placeholder="${t('html_doubt_placeholder')}"></textarea>
+                <button onclick="clarifyModule(${moduleId})" class="warning" style="margin-top:10px;">${t('html_clarify_targeted')}</button>
             `;
         }
 
@@ -685,7 +768,7 @@
             const level = document.getElementById('level').value;
 
             if (!dubbio) {
-                setMessage('Descrivi il dubbio specifico prima di chiedere chiarimenti.');
+                setMessage(t('html_insert_doubt'));
                 return;
             }
 
@@ -693,28 +776,28 @@
                 const res = await fetch('/api/clarify', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ argomento: modulo.titolo_modulo, spiegazione: modulo.spiegazione, dubbio, livello: level }),
+                    body: JSON.stringify({ argomento: modulo.titolo_modulo, spiegazione: modulo.spiegazione, dubbio, livello: level, lang: currentLang }),
                 });
                 const data = await res.json();
                 const clarifyDiv = document.getElementById(`clarify-${moduleId}`);
 
                 if (!data.success) {
-                    clarifyDiv.innerHTML += `<p class="error">${data.error || 'Errore.'}</p>`;
+                    clarifyDiv.innerHTML += `<p class="error">${data.error || t('html_error_label')}</p>`;
                     return;
                 }
 
                 interruzioneDubbio = true;
-                diarioNote.push(`Modulo ${moduleId} - ${modulo.titolo_modulo}: ${dubbio}`);
+                diarioNote.push(`Module ${moduleId} - ${modulo.titolo_modulo}: ${dubbio}`);
                 clarifyDiv.innerHTML = `
-                    <div class="badge">Spiegazione mirata</div>
-                    <p><strong>Spiegazione:</strong> ${data.data.spiegazione_semplificata}</p>
-                    <p><strong>Esempio pratico:</strong> ${data.data.esempio_pratico}</p>
-                    <p><strong>Passaggi consigliati:</strong></p>
+                    <div class="badge">${t('html_clarify_targeted_label')}</div>
+                    <p><strong>${t('html_explanation_text')}:</strong> ${data.data.spiegazione_semplificata}</p>
+                    <p><strong>${t('html_practical_example')}:</strong> ${data.data.esempio_pratico}</p>
+                    <p><strong>${t('html_suggested_steps')}:</strong></p>
                     <ul>${data.data.passaggi.map(p => `<li>${p}</li>`).join('')}</ul>
                 `;
                 updateSummary();
             } catch (err) {
-                setMessage('Errore di connessione.');
+                setMessage(t('html_connection_error'));
             }
         }
 
@@ -724,60 +807,64 @@
 
             if (summaryButton) {
                 summaryButton.style.display = currentResponse ? 'block' : 'none';
+                summaryButton.textContent = t('html_summary_generate_btn');
             }
 
             if (finalSummary) {
                 summary.innerHTML = `
                     <div class="summary-item">
-                        <h3>Punti di forza</h3>
-                        <ul>${finalSummary.punti_di_forza.length ? finalSummary.punti_di_forza.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto di forza disponibile.</li>'}</ul>
+                        <h3>${t('html_summary_strengths')}</h3>
+                        <ul>${finalSummary.punti_di_forza.length ? finalSummary.punti_di_forza.map(p => `<li>${p}</li>`).join('') : `<li>${t('html_no_strengths')}</li>`}</ul>
                     </div>
                     <div class="summary-item">
-                        <h3>Punti da migliorare</h3>
-                        <ul>${finalSummary.punti_da_migliorare.length ? finalSummary.punti_da_migliorare.map(p => `<li>${p}</li>`).join('') : '<li>Nessun punto da migliorare disponibile.</li>'}</ul>
+                        <h3>${t('html_summary_improvements')}</h3>
+                        <ul>${finalSummary.punti_da_migliorare.length ? finalSummary.punti_da_migliorare.map(p => `<li>${p}</li>`).join('') : `<li>${t('html_no_improvements')}</li>`}</ul>
                     </div>
                     <div class="summary-item">
-                        <h3>Diario di bordo</h3>
-                        <p>${finalSummary.diario_di_bordo || 'Nessuna nota disponibile.'}</p>
+                        <h3>${t('html_summary_logbook')}</h3>
+                        <p>${finalSummary.diario_di_bordo || t('html_no_notes')}</p>
                     </div>
                     <div class="summary-item">
-                        <h3>Saluto conclusivo</h3>
-                        <p>${finalSummary.saluto_conclusivo || 'Nessun saluto disponibile.'}</p>
+                        <h3>${t('html_summary_farewell')}</h3>
+                        <p>${finalSummary.saluto_conclusivo || t('html_no_greeting')}</p>
                     </div>
                 `;
                 document.getElementById('salutoText').textContent = '';
+                document.getElementById('summaryTitle').textContent = t('html_summary_title');
                 return;
             }
 
             if (!currentResponse) return;
 
+            document.getElementById('summaryTitle').textContent = t('html_summary_title');
+
             const level = document.getElementById('level').value || 'N/D';
             const { percorso_studio } = currentResponse;
             const completati = percorso_studio.moduli.filter(m => moduliState[m.id].completed).length;
             const archiviati = percorso_studio.moduli.filter(m => moduliState[m.id].archived).length;
-            const moduliNote = diarioNote.length ? diarioNote.join('; ') : 'Nessuna difficoltà specifica registrata.';
+            const moduliNote = diarioNote.length ? diarioNote.join('; ') : t('html_no_difficulties');
 
             summary.innerHTML = `
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
                     <div class="summary-item">
-                        <strong>Livello</strong>
+                        <strong>${t('html_level_status')}</strong>
                         <p>${level}</p>
                     </div>
                     <div class="summary-item">
-                        <strong>Progresso</strong>
-                        <p>${completati}/${percorso_studio.moduli.length} completati</p>
+                        <strong>${t('html_progress')}</strong>
+                        <p>${completati}/${percorso_studio.moduli.length} ${t('html_completed_count')}</p>
                     </div>
                     <div class="summary-item">
-                        <strong>Archiviati</strong>
+                        <strong>${t('html_archived_count')}</strong>
                         <p>${archiviati}</p>
                     </div>
                     <div class="summary-item">
-                        <strong>Commenti raccolti</strong>
+                        <strong>${t('html_collected_comments')}</strong>
                         <p>${Object.keys(moduleSolutions).length}</p>
                     </div>
                 </div>
                 <div class="summary-item" style="margin-top:12px;">
-                    <strong>Diario di bordo</strong>
+                    <strong>${t('html_diary_label')}</strong>
                     <p>${moduliNote}</p>
                 </div>
             `;
@@ -790,7 +877,7 @@
             const solutions = Object.values(moduleSolutions);
 
             if (solutions.length === 0) {
-                setMessage('Inserisci almeno una soluzione prima di generare il riepilogo finale.');
+                setMessage(t('html_insert_at_least_one'));
                 return;
             }
 
@@ -798,12 +885,12 @@
                 const res = await fetch('/api/final-summary', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ solutions, diary: diarioNote, livello: level, session_id: currentSessionId }),
+                    body: JSON.stringify({ solutions, diary: diarioNote, livello: level, session_id: currentSessionId, lang: currentLang }),
                 });
                 const data = await res.json();
 
                 if (!data.success) {
-                    setMessage(data.error || 'Errore nella generazione del riepilogo finale.');
+                    setMessage(data.error || t('html_eval_error'));
                     return;
                 }
 
@@ -811,9 +898,12 @@
                 document.getElementById('salutoText').textContent = '';
                 updateSummary();
             } catch (err) {
-                setMessage('Errore di connessione.');
+                setMessage(t('html_connection_error'));
             }
         }
+
+        // Init button styles
+        document.getElementById('btnLangIT').className = 'active-lang';
     </script>
 </body>
 </html>
