@@ -1,0 +1,7 @@
+python-dotenv
+pydantic
+flask
+streamlit
+pytest
+psycopg2-binary
+bcrypt
