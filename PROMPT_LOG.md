@@ -186,3 +186,9 @@ Registro delle modifiche e dei test effettuati sui prompt.
 - **Azione:** Aggiornato il prompt del sanity check (IT e EN) per escludere le ammissioni di difficoltà dai criteri "non pertinente".
 - **Obiettivo:** Evitare che "non lo so" venga bloccato con messaggi passivo-aggressivi ("non dimostra alcuno sforzo").
 - **Risultato:** "non lo so" passa il sanity check e arriva alla valutazione, che risponde in modo incoraggiante.
+
+## [7 Luglio 2026] - Logo 8-bit cartuccia SNES
+- **Azione:** Generato prompt per Claude per logo MLPG in stile pixel art / 8-bit.
+- **Obiettivo:** Creare un logo con robot 8-bit e testo "MLPG" dentro una cartuccia stile SNES con effetto glow/neon.
+- **Prompt Claude:** Logo SVG con cartuccia videogioco, robot pixel art scalato dall'esistente, testo MLPG in pixel font oro, doppio alone glow dietro robot e sotto testo, circuiti decorativi oro, palette blu/indaco/oro.
+- **Risultato:** SVG salvato in `logos/mlpg_logo.svg` — cartuccia con ombra, glow radiale, testo con 2 layer di ombra glow. Robot scalato 0.55x centrato nella cartuccia.

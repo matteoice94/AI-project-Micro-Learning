@@ -2,7 +2,8 @@ import sys
 import json
 import hashlib
 import base64
-import time
+import datetime as dt
+import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -20,13 +21,11 @@ from src.generator import (
     traduci_modulo_singolo,
 )
 from src.robot_display import get_robot_path, robot_html
-    from src.database import (
-        init_db,
-        create_user,
-        authenticate_user,
-        create_password_reset_token,
-        reset_password_with_token,
-        save_session,
+from src.database import (
+    init_db,
+    create_user,
+    authenticate_user,
+    save_session,
     save_attempt,
     update_module_state,
     rename_module,
@@ -40,6 +39,9 @@ from src.robot_display import get_robot_path, robot_html
     find_similar_modules,
     award_user_xp,
     track_wrong_answer,
+    track_lang_usage,
+    get_public_profile,
+    update_user_profile,
     get_user_stats,
     get_leaderboard,
     get_user_topic_stats,
@@ -49,7 +51,15 @@ from src.robot_display import get_robot_path, robot_html
 )
 from src.config import RAG_TOP_K
 from src.i18n import tr, SUPPORTED_LANGS
-from src.gamification import xp_to_next_level, level_from_xp, badge_info, BADGES
+from src.gamification import xp_to_next_level, level_from_xp, badge_info, BADGES, badge_svg
+
+
+def _to_date(val):
+    """Normalizza un valore data (str o datetime.date) → datetime.date"""
+    if isinstance(val, dt.date):
+        return val
+    return dt.datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
+
 
 st.set_page_config(
     page_title=tr("page_title"),
@@ -344,8 +354,8 @@ def _award_path_complete(topic: str = ""):
 
 
 @st.cache_data(ttl="30s")
-def _cached_sessions(user_id: int | None, limit: int = 1000, offset: int = 0):
-    return get_all_sessions(user_id, limit, offset)
+def _cached_sessions(user_id: int | None):
+    return get_all_sessions(user_id)
 
 
 @st.cache_data(ttl="30s")
@@ -369,6 +379,10 @@ def _sync_lang(new_lang: str):
     if new_lang == old_lang:
         return
     st.session_state.lang = new_lang
+
+    # Track language for Polyglot badge
+    user_id = st.session_state.user.get("id") if st.session_state.user else None
+    track_lang_usage(user_id, new_lang)
 
     # ── Traduci percorso attivo ──
     if st.session_state.response and st.session_state.response_lang != new_lang:
@@ -500,8 +514,8 @@ def _verify_session_token(token: str) -> tuple[int, str] | None:
     return None
 
 
-if not st.session_state.get("user") and not st.session_state.get("_session_checked"):
-    st.session_state._session_checked = True
+# ── Session recovery: try query params on every load if no user ──
+if not st.session_state.get("user"):
     token = st.query_params.get("session")
     if token:
         result = _verify_session_token(token)
@@ -512,27 +526,29 @@ if not st.session_state.get("user") and not st.session_state.get("_session_check
 
 
 def _persist_session():
-    if st.session_state.user:
+    """Save session token to URL query params and rerun to apply."""
+    if st.session_state.get("user"):
         uid = st.session_state.user["id"]
         uname = st.session_state.user["username"]
         token = _make_session_token(uid, uname)
         st.query_params["session"] = token
         st.query_params["slang"] = st.session_state.get("lang", "it")
+        st.rerun()
 
 
 # ── Login ──────────────────────────────────────────────────
 if not st.session_state.user:
-    st.markdown("""
-    <style>
-        [data-testid="stSidebar"] { display: none !important; }
-        .main .block-container { display: flex; justify-content: center; align-items: center; min-height: 90vh; }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(textwrap.dedent("""
+<style>
+[data-testid="stSidebar"] { display: none !important; }
+.main .block-container { display: flex; justify-content: center; align-items: center; min-height: 90vh; }
+</style>
+"""), unsafe_allow_html=True)
     lang = _lang()
 
-    st.markdown("""
-    <div style='position:fixed;top:16px;right:16px;z-index:1000;'>
-    """, unsafe_allow_html=True)
+    st.markdown(textwrap.dedent("""
+<div style='position:fixed;top:16px;right:16px;z-index:1000;'>
+"""), unsafe_allow_html=True)
     lang_icons = {"it": "🇮🇹 IT", "en": "🇬🇧 EN"}
     cols_lang = st.columns(len(SUPPORTED_LANGS))
     for i, l in enumerate(SUPPORTED_LANGS):
@@ -546,99 +562,36 @@ if not st.session_state.user:
     _, col_login, _ = st.columns([1, 1.5, 1])
     with col_login:
         st.image(get_robot_path("neutral"), width=160)
-        if "reset_flow" not in st.session_state:
-            st.session_state.reset_flow = None  # None, 'forgot', 'reset'
-
-        if st.session_state.reset_flow is None:
-            tab = st.radio(tr("login_title", lang), [tr("login_tab", lang), tr("register_tab", lang)],
-                           horizontal=True, label_visibility="collapsed")
-            if tab == tr("login_tab", lang):
-                username = st.text_input(f"👤 {tr('username', lang)}", key="login_user")
-                password = st.text_input(f"🔑 {tr('password', lang)}", type="password", key="login_pass")
-                col_btn, col_fgt = st.columns([2, 1])
-                with col_btn:
-                    if st.button(f"🚀 {tr('login_tab', lang)}", use_container_width=True, type="primary"):
-                        user = authenticate_user(username, password)
-                        if user:
-                            st.session_state.user = user
-                            _persist_session()
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {tr('wrong_credentials', lang)}")
-                with col_fgt:
-                    if st.button(f"🔑 {tr('forgot_password', lang)}", use_container_width=True):
-                        st.session_state.reset_flow = "forgot"
-                        st.rerun()
-            else:
-                reg_user = st.text_input(f"👤 {tr('username', lang)}", key="reg_user")
-                reg_pass = st.text_input(f"🔑 {tr('password', lang)}", type="password", key="reg_pass")
-                reg_confirm = st.text_input(f"🔑 {tr('confirm_password', lang)}", type="password", key="reg_confirm")
-                if st.button(f"📝 {tr('register_tab', lang)}", use_container_width=True, type="primary"):
-                    if not reg_user or not reg_pass:
-                        st.error(f"❌ {tr('fill_all_fields', lang)}")
-                    elif reg_pass != reg_confirm:
-                        st.error(f"❌ {tr('passwords_mismatch', lang)}")
-                    elif len(reg_pass) < 4:
-                        st.error(f"❌ {tr('password_too_short', lang)}")
+        tab = st.radio(tr("login_title", lang), [tr("login_tab", lang), tr("register_tab", lang)],
+                       horizontal=True, label_visibility="collapsed")
+        if tab == tr("login_tab", lang):
+            username = st.text_input(f"👤 {tr('username', lang)}", key="login_user")
+            password = st.text_input(f"🔑 {tr('password', lang)}", type="password", key="login_pass")
+            if st.button(f"🚀 {tr('login_tab', lang)}", use_container_width=True, type="primary"):
+                user = authenticate_user(username, password)
+                if user:
+                    st.session_state.user = user
+                    _persist_session()
+                else:
+                    st.error(f"❌ {tr('wrong_credentials', lang)}")
+        else:
+            reg_user = st.text_input(f"👤 {tr('username', lang)}", key="reg_user")
+            reg_pass = st.text_input(f"🔑 {tr('password', lang)}", type="password", key="reg_pass")
+            reg_confirm = st.text_input(f"🔑 {tr('confirm_password', lang)}", type="password", key="reg_confirm")
+            if st.button(f"📝 {tr('register_tab', lang)}", use_container_width=True, type="primary"):
+                if not reg_user or not reg_pass:
+                    st.error(f"❌ {tr('fill_all_fields', lang)}")
+                elif reg_pass != reg_confirm:
+                    st.error(f"❌ {tr('passwords_mismatch', lang)}")
+                elif len(reg_pass) < 4:
+                    st.error(f"❌ {tr('password_too_short', lang)}")
+                else:
+                    uid = create_user(reg_user, reg_pass)
+                    if uid:
+                        st.session_state.user = {"id": uid, "username": reg_user}
+                        _persist_session()
                     else:
-                        uid = create_user(reg_user, reg_pass)
-                        if uid:
-                            st.session_state.user = {"id": uid, "username": reg_user}
-                            _persist_session()
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {tr('username_exists', lang)}")
-
-        elif st.session_state.reset_flow == "forgot":
-            st.subheader(f"🔑 {tr('forgot_password_title', lang)}")
-            st.caption(tr('forgot_password_desc', lang))
-            reset_username = st.text_input(f"👤 {tr('username', lang)}", key="reset_username")
-            col_gen, col_back = st.columns(2)
-            with col_gen:
-                if st.button(f"📨 {tr('send_reset_token', lang)}", use_container_width=True, type="primary"):
-                    if not reset_username:
-                        st.error(f"❌ {tr('fill_all_fields', lang)}")
-                    else:
-                        token = create_password_reset_token(reset_username)
-                        if token:
-                            st.session_state._reset_token = token
-                            st.session_state._reset_username = reset_username
-                            st.session_state.reset_flow = "reset"
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {tr('user_not_found', lang)}")
-            with col_back:
-                if st.button(f"⬅️ {tr('back', lang)}", use_container_width=True):
-                    st.session_state.reset_flow = None
-                    st.rerun()
-
-        elif st.session_state.reset_flow == "reset":
-            st.subheader(f"🔐 {tr('reset_password_title', lang)}")
-            st.caption(tr('reset_password_desc', lang))
-            token_value = st.session_state.get("_reset_token", "")
-            st.info(f"🔑 {tr('reset_token_label', lang)}: **{token_value}**")
-            input_token = st.text_input(f"🎫 {tr('reset_token_label', lang)}", key="input_reset_token")
-            new_pass = st.text_input(f"🔑 {tr('new_password', lang)}", type="password", key="new_reset_pass")
-            col_rst, col_bk = st.columns(2)
-            with col_rst:
-                if st.button(f"✅ {tr('reset_password_btn', lang)}", use_container_width=True, type="primary"):
-                    if not input_token or not new_pass:
-                        st.error(f"❌ {tr('fill_all_fields', lang)}")
-                    elif len(new_pass) < 4:
-                        st.error(f"❌ {tr('password_too_short', lang)}")
-                    else:
-                        if reset_password_with_token(input_token, new_pass):
-                            st.success(f"✅ {tr('reset_success', lang)}")
-                            st.session_state.reset_flow = None
-                            st.session_state._reset_token = None
-                            time.sleep(1.5)
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {tr('reset_invalid_token', lang)}")
-            with col_bk:
-                if st.button(f"⬅️ {tr('login_tab', lang)}", use_container_width=True):
-                    st.session_state.reset_flow = None
-                    st.rerun()
+                        st.error(f"❌ {tr('username_exists', lang)}")
     st.stop()
 
 
@@ -1160,11 +1113,7 @@ def storico_page():
     st.title(f"📚 {tr('history_page', lang)}")
     st.markdown(tr('history_description', lang))
 
-    PAGE_SIZE = 10
-    if "history_page" not in st.session_state:
-        st.session_state.history_page = 0
-    offset = st.session_state.history_page * PAGE_SIZE
-    sessions = _cached_sessions(st.session_state.user["id"], PAGE_SIZE, offset)
+    sessions = _cached_sessions(st.session_state.user["id"])
     if not sessions:
         st.info(f"📭 {tr('no_sessions', lang)}")
         return
@@ -1308,23 +1257,6 @@ def storico_page():
                             )
                             st.caption(f"{esito_icon} {att['created_at'][:16]}")
 
-    total_loaded = offset + len(sessions)
-    if total_loaded > 0:
-        st.markdown("---")
-        col_prev, col_info, col_next = st.columns([1, 2, 1])
-        with col_prev:
-            if st.session_state.history_page > 0:
-                if st.button(f"⬅️ {tr('prev_page', lang)}", use_container_width=True):
-                    st.session_state.history_page -= 1
-                    st.rerun()
-        with col_info:
-            st.markdown(f"<div style='text-align:center'>{tr('page_n', lang, n=st.session_state.history_page + 1)}</div>", unsafe_allow_html=True)
-        with col_next:
-            if len(sessions) >= PAGE_SIZE:
-                if st.button(f"{tr('next_page', lang)} ➡️", use_container_width=True):
-                    st.session_state.history_page += 1
-                    st.rerun()
-
 
 # ══════════════════════════════════════════════════════════════
 # Page: Obiettivi (gamification)
@@ -1340,51 +1272,92 @@ def obiettivi_page():
     lvl, needed, progress = xp_to_next_level(xp)
     accuracy = get_user_accuracy(user_id)
 
-    col_lvl, col_xp, col_str, col_acc = st.columns(4)
-    with col_lvl:
-        st.metric(tr("your_level", lang), lvl)
-    with col_xp:
-        st.metric("XP", xp, delta=None)
-    with col_str:
-        st.metric(tr("current_streak", lang), f"{stats.get('current_streak', 0)} {tr('days', lang)}")
-    with col_acc:
-        st.metric(tr("accuracy_stat", lang), f"{accuracy:.0f}%")
+    tab_summary, tab_gallery = st.tabs([
+        tr("badge_summary_tab", lang),
+        tr("badge_gallery_tab", lang),
+    ])
 
-    pct = min(int(progress / max(needed, 1) * 100), 100)
-    st.progress(pct / 100)
-    st.caption(f"{tr('xp_progress', lang)}: {progress}/{needed} XP → {tr('your_level', lang)} {lvl + 1}")
+    # ── Tab 1: Riepilogo ──────────────────────────────────────
+    with tab_summary:
+        col_lvl, col_xp, col_str, col_acc = st.columns(4)
+        with col_lvl:
+            st.metric(tr("your_level", lang), lvl)
+        with col_xp:
+            st.metric("XP", xp, delta=None)
+        with col_str:
+            st.metric(tr("current_streak", lang), f"{stats.get('current_streak', 0)} {tr('days', lang)}")
+        with col_acc:
+            st.metric(tr("accuracy_stat", lang), f"{accuracy:.0f}%")
 
-    # Badges
-    st.markdown("---")
-    st.markdown(f"### 🎖️ {tr('badges_title', lang)}")
-    badges_list = stats.get("badges", "[]")
-    badges_list = json.loads(badges_list) if isinstance(badges_list, str) else badges_list
-    if badges_list:
-        cols_b = st.columns(3)
-        for i, bkey in enumerate(badges_list):
+        pct = min(int(progress / max(needed, 1) * 100), 100)
+        st.progress(pct / 100)
+        st.caption(f"{tr('xp_progress', lang)}: {progress}/{needed} XP → {tr('your_level', lang)} {lvl + 1}")
+
+        # Badges
+        st.markdown("---")
+        st.markdown(f"### 🎖️ {tr('badges_title', lang)}")
+        badges_list = stats.get("badges", "[]")
+        badges_list = json.loads(badges_list) if isinstance(badges_list, str) else badges_list
+        if badges_list:
+            cols_b = st.columns(3)
+            for i, bkey in enumerate(badges_list):
+                info = badge_info(bkey, lang)
+                with cols_b[i % 3]:
+                    st.markdown(badge_svg(bkey, lang, size=36), unsafe_allow_html=True)
+                    st.markdown(f"**{info['name']}**")
+                    st.caption(info["desc"])
+        else:
+            st.info(tr("no_badges_yet", lang))
+
+        # Leaderboard
+        st.markdown("---")
+        st.markdown(f"### 🏅 {tr('leaderboard_title', lang)}")
+        lb = get_leaderboard(10)
+        if lb:
+            for i, entry in enumerate(lb):
+                col_r, col_u, col_x = st.columns([0.5, 3, 1.5])
+                with col_r:
+                    st.markdown(f"**{i + 1}.**")
+                with col_u:
+                    is_me = entry["username"] == st.session_state.user["username"]
+                    label = f"{'👑 ' if is_me else ''}{entry['username']}"
+                    if st.button(label, key=f"lb_user_{entry.get('user_id', i)}",
+                                 use_container_width=True,
+                                 type="primary" if is_me else "secondary",
+                                 help=tr('profile_public_title', lang) if not is_me else None):
+                        st.session_state.view = "public_profile"
+                        st.session_state.view_user_id = entry["user_id"]
+                        st.rerun()
+                with col_x:
+                    st.caption(f"⚡ {entry['xp']} XP · Lv {entry['level']}")
+        else:
+            st.info(tr("no_sessions", lang))
+
+    # ── Tab 2: Galleria Badge ─────────────────────────────────
+    with tab_gallery:
+        badges_list = stats.get("badges", "[]")
+        badges_list = json.loads(badges_list) if isinstance(badges_list, str) else badges_list
+        total_badges = len(BADGES)
+        unlocked_count = len(badges_list)
+
+        st.markdown(f"### 🎖️ {tr('badge_gallery_tab', lang)}")
+        st.caption(tr("badge_unlocked_count", lang, unlocked=unlocked_count, total=total_badges))
+
+        cols_g = st.columns(4)
+        for i, (bkey, binfo) in enumerate(BADGES.items()):
+            is_unlocked = bkey in badges_list
             info = badge_info(bkey, lang)
-            with cols_b[i % 3]:
-                st.markdown(f"**{info['icon']} {info['name']}**")
-                st.caption(info["desc"])
-    else:
-        st.info(tr("no_badges_yet", lang))
-
-    # Leaderboard
-    st.markdown("---")
-    st.markdown(f"### 🏅 {tr('leaderboard_title', lang)}")
-    lb = get_leaderboard(10)
-    if lb:
-        for i, entry in enumerate(lb):
-            col_r, col_u, col_x = st.columns([0.5, 3, 1.5])
-            with col_r:
-                st.markdown(f"**{i + 1}.**")
-            with col_u:
-                me = "**" if entry["username"] == st.session_state.user["username"] else ""
-                st.markdown(f"{me}{entry['username']}{me}")
-            with col_x:
-                st.caption(f"⚡ {entry['xp']} XP · Lv {entry['level']}")
-    else:
-        st.info(tr("no_sessions", lang))
+            name = info["name"]
+            desc = info["desc"] if is_unlocked else tr("badge_locked", lang)
+            opacity = "1" if is_unlocked else "0.4"
+            with cols_g[i % 4]:
+                st.markdown(textwrap.dedent(f"""
+<div style="text-align:center; opacity:{opacity}; padding:10px 4px;">
+{badge_svg(bkey, lang, size=48, locked=not is_unlocked)}
+<div style="font-weight:600; font-size:0.85rem; margin-top:6px;">{name}</div>
+<div style="font-size:0.7rem; color:#888; margin-top:2px;">{desc}</div>
+</div>
+"""), unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1393,65 +1366,505 @@ def obiettivi_page():
 def dashboard_page():
     lang = _lang()
     user_id = st.session_state.user["id"]
+    username = st.session_state.user["username"]
 
     st.title(f"📊 {tr('dashboard_page', lang)}")
 
-    tab_perf, tab_learn = st.tabs([tr("dashboard_performance", lang), tr("dashboard_learning", lang)])
+    stats = get_user_stats(user_id)
+    accuracy = get_user_accuracy(user_id)
+    weekly = get_user_weekly_activity(user_id)
+    topics = get_user_topic_stats(user_id)
 
-    with tab_perf:
-        stats = get_user_stats(user_id)
-        accuracy = get_user_accuracy(user_id)
+    xp = stats.get("xp", 0)
+    lvl, needed, progress = xp_to_next_level(xp)
+    streak = stats.get("current_streak", 0)
+    max_streak = stats.get("max_streak", 0)
+    total_correct = stats.get("total_correct", 0)
+    total_wrong = stats.get("total_wrong", 0)
+    total_attempts_count = total_correct + total_wrong
+    modules_done = stats.get("total_modules_completed", 0)
+    paths_done = stats.get("total_paths_completed", 0)
 
+    # ── 1. Narrative Section ─────────────────────────────────
+    _render_narrative(stats, weekly, accuracy, modules_done, lang, username)
+
+    st.markdown("---")
+
+    # ── 2. KPI Cards Row ─────────────────────────────────────
+    _render_kpi_cards(lvl, xp, needed, progress, streak, max_streak, accuracy,
+                      modules_done, paths_done, lang)
+
+    st.markdown("---")
+
+    # ── 3. Accuracy Donut + Weekly Heatmap ───────────────────
+    col_left, col_right = st.columns([1, 1])
+    with col_left:
+        _render_accuracy_donut(total_correct, total_wrong, accuracy, total_attempts_count, lang)
+    with col_right:
+        _render_weekly_heatmap(weekly, lang)
+
+    st.markdown("---")
+
+    # ── 4. Topics Section ────────────────────────────────────
+    _render_topics_section(topics, stats, lang)
+
+
+
+# ── Narrative: frasi motivazionali basate sui dati ────────────
+def _render_narrative(stats, weekly, accuracy, modules_done, lang, username):
+    streak = stats.get("current_streak", 0)
+    last_active = stats.get("last_active_date", "")
+    total_sessions = stats.get("total_sessions", 0)
+
+    today = dt.date.today()
+
+    # Determina il tono del messaggio
+    if modules_done == 0 and total_sessions == 0:
+        msg_key = "motivational_start"
+    elif weekly and len(weekly) >= 3:
+        this_week_total = sum(d.get("count", 0) for d in weekly)
+        if this_week_total >= 10:
+            msg_key = "motivational_great"
+        else:
+            msg_key = "motivational_good"
+    elif last_active:
+        try:
+            last_date = dt.datetime.strptime(last_active[:10], "%Y-%m-%d").date()
+            if (today - last_date).days > 3:
+                msg_key = "motivational_comeback"
+            else:
+                msg_key = "motivational_good"
+        except (ValueError, TypeError):
+            msg_key = "motivational_good"
+    else:
+        msg_key = "motivational_good"
+
+    st.markdown(f"### {tr(msg_key, lang)}")
+
+    # Subtitle con dettagli contestuali
+    details = []
+    if modules_done > 0:
+        details.append(f"**{modules_done}** {tr('modules_completed_stat', lang).lower()}")
+    if paths_done := stats.get("total_paths_completed", 0) > 0:
+        details.append(f"**{stats.get('total_paths_completed', 0)}** {tr('paths_completed_stat', lang).lower()}")
+    if accuracy > 0:
+        details.append(f"{tr('accuracy_stat', lang)}: **{accuracy:.0f}%**")
+    if streak > 0:
+        details.append(f"🔥 {streak} {tr('days', lang)}")
+
+    if details:
+        st.caption(" · ".join(details))
+
+    # Riepilogo ultima settimana in linguaggio naturale
+    if weekly:
+        total_weekly = sum(d.get("count", 0) for d in weekly)
+        active_days = len(weekly)
+        day_names = [tr(f"day_{['mon','tue','wed','thu','fri','sat','sun'][_to_date(d['day']).weekday()]}", lang) for d in weekly]
+        st.markdown(
+            f"_{tr('this_week', lang)}: {total_weekly} {tr('attempts_label', lang)} "
+            f"in {active_days} giorni ({', '.join(day_names)})_"
+        )
+    elif modules_done == 0:
+        st.markdown(f"_{tr('no_activity_data', lang)}_")
+
+
+# ── KPI Cards ─────────────────────────────────────────────────
+def _render_kpi_cards(lvl, xp, needed, progress, streak, max_streak, accuracy,
+                      modules_done, paths_done, lang):
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        st.markdown(f"<div style='text-align:center;font-size:2.5rem;'>🛡️</div>", unsafe_allow_html=True)
+        st.metric(tr("your_level", lang), lvl)
+
+    with col2:
+        pct = min(int(progress / max(needed, 1) * 100), 100)
+        st.markdown(f"<div style='text-align:center;font-size:2.5rem;'>⚡</div>", unsafe_allow_html=True)
+        st.metric("XP", xp)
+        st.progress(pct / 100)
+        st.caption(f"Lv {lvl + 1}: {progress}/{needed}")
+
+    with col3:
+        st.markdown(f"<div style='text-align:center;font-size:2.5rem;'>🔥</div>", unsafe_allow_html=True)
+        st.metric(tr("current_streak", lang), f"{streak} {tr('days', lang)}")
+        if max_streak > streak:
+            st.caption(f"{tr('best_streak', lang)}: {max_streak}")
+
+    with col4:
+        st.markdown(f"<div style='text-align:center;font-size:2.5rem;'>🎯</div>", unsafe_allow_html=True)
+        st.metric(tr("accuracy_stat", lang), f"{accuracy:.0f}%")
+
+    with col5:
+        st.markdown(f"<div style='text-align:center;font-size:2.5rem;'>📦</div>", unsafe_allow_html=True)
+        st.metric(tr("modules_completed_stat", lang), modules_done,
+                  delta=f"{paths_done} {tr('paths_completed_stat', lang).lower()}" if paths_done else None)
+
+
+# ── Accuracy Donut ────────────────────────────────────────────
+def _render_accuracy_donut(correct, wrong, accuracy_pct, total, lang):
+    st.markdown(f"#### 🎯 {tr('accuracy_donut_label', lang)}")
+
+    if total == 0:
+        st.info(tr("no_activity_data", lang))
+        return
+
+    # CSS donut chart
+    donut_html = textwrap.dedent(f"""
+    <div style="display:flex; align-items:center; gap:20px;">
+    <div style="position:relative; width:140px; height:140px;">
+    <svg viewBox="0 0 36 36" style="width:140px; height:140px;">
+    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#eee" stroke-width="3"/>
+    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#4CAF50" stroke-width="3"
+    stroke-dasharray="{accuracy_pct:.0f}, {100 - accuracy_pct:.0f}"
+    stroke-dashoffset="25" stroke-linecap="round"
+    transform="rotate(-90 18 18)"/>
+    <text x="18" y="19" text-anchor="middle" font-size="7" font-weight="bold" fill="#333">
+    {accuracy_pct:.0f}%
+    </text>
+    </svg>
+    </div>
+    <div>
+    <div style="margin-bottom:6px;">✅ <b>{correct}</b> {tr('total_correct_stat', lang).lower()}</div>
+    <div style="margin-bottom:6px;">❌ <b>{wrong}</b> {tr('total_wrong_stat', lang).lower()}</div>
+    <div style="color:#888;font-size:0.85rem;">{total} {tr('total_attempts', lang)}</div>
+    </div>
+    </div>
+    """).strip()
+    st.markdown(donut_html, unsafe_allow_html=True)
+
+
+# ── Weekly Heatmap (GitHub-style) ─────────────────────────────
+def _render_weekly_heatmap(weekly, lang):
+    st.markdown(f"#### 📅 {tr('weekly_activity', lang)}")
+
+    today = dt.date.today()
+
+    # Build last 7 days map
+    days_map = {}
+    for i in range(6, -1, -1):
+        d = today - dt.timedelta(days=i)
+        days_map[d.isoformat()] = 0
+
+    for entry in weekly:
+        day_str = _to_date(entry["day"]).isoformat()
+        days_map[day_str] = entry.get("count", 0)
+
+    # Color intensity
+    max_count = max(days_map.values()) if days_map else 1
+
+    def _color(count):
+        if count == 0:
+            return "#ebedf0"
+        ratio = count / max(max_count, 1)
+        if ratio <= 0.25:
+            return "#c6e48b"
+        elif ratio <= 0.5:
+            return "#7bc96f"
+        elif ratio <= 0.75:
+            return "#239a3b"
+        else:
+            return "#196127"
+
+    total_week = sum(days_map.values())
+
+    day_keys = ["day_mon", "day_tue", "day_wed", "day_thu", "day_fri", "day_sat", "day_sun"]
+    cells_html = ""
+    for i, (day_str, count) in enumerate(days_map.items()):
+        d = _to_date(day_str)
+        day_label = tr(day_keys[d.weekday()], lang)
+        cells_html += textwrap.dedent(f"""
+<div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+<div style="width:36px; height:36px; border-radius:6px; background:{_color(count)};"
+title="{day_str}: {count} tentativi"></div>
+<span style="font-size:0.7rem; color:#666;">{day_label}</span>
+<span style="font-size:0.65rem; color:#999;">{count}</span>
+</div>""")
+
+    heatmap_html = textwrap.dedent(f"""
+<div style="display:flex; justify-content:center; gap:8px; padding:10px 0;">
+{cells_html}
+</div>
+<p style="text-align:center; color:#888; font-size:0.85rem;">
+{total_week} {tr('attempts_label', lang)} {tr('last_7_days', lang)}
+</p>
+""").strip()
+    st.markdown(heatmap_html, unsafe_allow_html=True)
+
+
+# ── Topics Section ────────────────────────────────────────────
+def _render_topics_section(topics, stats, lang):
+    st.markdown(f"#### 📚 {tr('topic_distribution', lang)}")
+
+    if not topics:
+        st.info(tr("no_topic_data", lang))
+        return
+
+    # Horizontal bars
+    max_sessions = max(t["session_count"] for t in topics)
+    for t in topics[:6]:
+        topic_name = t["topic"] or "—"
+        count = t["session_count"]
+        bar_pct = int(count / max_sessions * 100)
+        bar_color = "#4CAF50" if bar_pct > 50 else ("#FF9800" if bar_pct > 25 else "#2196F3")
+        st.markdown(textwrap.dedent(f"""
+<div style="margin-bottom:8px;">
+<div style="display:flex; justify-content:space-between; font-size:0.9rem;">
+<span>{topic_name}</span>
+<span style="color:#888;">{count} {tr('sessions_this_week', lang)}</span>
+</div>
+<div style="background:#eee; border-radius:4px; height:10px; width:100%;">
+<div style="background:{bar_color}; border-radius:4px; height:10px; width:{bar_pct}%;"></div>
+</div>
+</div>
+""").strip(), unsafe_allow_html=True)
+
+    # Topics studied list
+    tl = stats.get("topics_studied", "[]")
+    tl = json.loads(tl) if isinstance(tl, str) else tl
+    if tl:
+        st.caption(f"{tr('topics_studied', lang)}: {', '.join(tl)}")
+
+
+# ══════════════════════════════════════════════════════════════
+# Page: Profilo (personalizzazione)
+# ══════════════════════════════════════════════════════════════
+AVATAR_OPTIONS = ["🤖", "🐱", "🐶", "🦊", "🐼", "🐨", "🐸", "🦉", "🐙", "👾", "👽", "🧑‍🚀", "🧙", "🧛", "🦸", "🎸"]
+
+THEME_COLORS = [
+    ("#4CAF50", "Verde"),
+    ("#2196F3", "Blu"),
+    ("#9C27B0", "Viola"),
+    ("#FF9800", "Arancione"),
+    ("#E91E63", "Rosa"),
+    ("#00BCD4", "Azzurro"),
+    ("#795548", "Marrone"),
+    ("#607D8B", "Grigio"),
+]
+
+
+def profile_page():
+    lang = _lang()
+    user_id = st.session_state.user["id"]
+    stats = get_user_stats(user_id)
+    xp = stats.get("xp", 0)
+    lvl, needed, progress = xp_to_next_level(xp)
+    badges_list = json.loads(stats.get("badges", "[]")) if isinstance(stats.get("badges"), str) else stats.get("badges", [])
+
+    # Init session_state for pending edits (or load from DB)
+    if "profile_avatar" not in st.session_state:
+        st.session_state.profile_avatar = stats.get("avatar", "🤖")
+    if "profile_theme" not in st.session_state:
+        st.session_state.profile_theme = stats.get("theme_color", "#4CAF50")
+    if "profile_featured" not in st.session_state:
+        featured_db = json.loads(stats.get("featured_badges", "[]")) if isinstance(stats.get("featured_badges"), str) else stats.get("featured_badges", [])
+        st.session_state.profile_featured = list(featured_db)
+
+    pending_avatar = st.session_state.profile_avatar
+    pending_theme = st.session_state.profile_theme
+    pending_featured = st.session_state.profile_featured
+
+    st.title(f"👤 {tr('profile_title', lang)}")
+
+    _, col_main, _ = st.columns([1, 2, 1])
+    with col_main:
+        # ── Anteprima card profilo ──
+        st.markdown(textwrap.dedent(f"""
+<div style="background:linear-gradient(135deg, {pending_theme}22, {pending_theme}08);
+border:2px solid {pending_theme}; border-radius:16px; padding:24px; text-align:center; margin-bottom:24px;">
+<div style="font-size:4rem;">{pending_avatar}</div>
+<div style="font-size:1.5rem; font-weight:700; margin:8px 0;">{st.session_state.user['username']}</div>
+<div style="display:flex; justify-content:center; gap:12px; margin:8px 0;">
+<span style="background:{pending_theme}; color:#fff; padding:4px 12px; border-radius:12px; font-size:0.8rem;">
+⚡ Lv {lvl} · {xp} XP
+</span>
+</div>
+<div style="margin-top:12px; display:flex; justify-content:center; gap:8px;">
+{''.join(badge_svg(b, lang, size=40) for b in pending_featured) if pending_featured else f'<span style="color:#aaa; font-size:0.8rem;">{tr("profile_no_featured", lang)}</span>'}
+</div>
+</div>
+"""), unsafe_allow_html=True)
+
+        # ── Form personalizzazione ──
+        st.markdown(f"### ✏️ {tr('profile_edit', lang)}")
+
+        # Avatar selector
+        st.markdown(f"#### {tr('profile_avatar', lang)}")
+        cols_a = st.columns(8)
+        for i, a in enumerate(AVATAR_OPTIONS):
+            with cols_a[i % 8]:
+                selected = a == pending_avatar
+                if st.button(a, key=f"avatar_{i}", use_container_width=True,
+                             type="primary" if selected else "secondary"):
+                    st.session_state.profile_avatar = a
+                    st.rerun()
+
+        # Theme color — clickable color swatches
+        st.markdown(f"#### {tr('profile_color', lang)}")
+        cols_t = st.columns(len(THEME_COLORS))
+        for i, (color, name) in enumerate(THEME_COLORS):
+            with cols_t[i]:
+                is_sel = color == pending_theme
+                # Circle swatch button
+                swatch_html = textwrap.dedent(f"""
+<div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+<div style="width:36px; height:36px; border-radius:50%; background:{color};
+border:{'3px solid #333' if is_sel else '1px solid #ccc'};
+box-shadow:{'0 0 0 3px ' + color + '44' if is_sel else 'none'};
+cursor:pointer; transition:all 0.2s;"></div>
+<span style="font-size:0.65rem; color:{'#333' if is_sel else '#888'};
+font-weight:{'bold' if is_sel else 'normal'};">{name.split()[0]}</span>
+</div>
+""")
+                if st.button("", key=f"color_{i}", use_container_width=True,
+                             type="primary" if is_sel else "secondary",
+                             help=name):
+                    st.session_state.profile_theme = color
+                    st.rerun()
+                st.markdown(swatch_html, unsafe_allow_html=True)
+
+        # Featured badges selector
+        st.markdown(f"#### {tr('profile_featured', lang)}")
+        if badges_list:
+            cols_f = st.columns(4)
+            for i, bkey in enumerate(badges_list):
+                info = badge_info(bkey, lang)
+                with cols_f[i % 4]:
+                    cb_val = st.checkbox(f"{info['icon']} {info['name']}",
+                                         value=bkey in pending_featured,
+                                         key=f"feat_{bkey}")
+                    if cb_val:
+                        if bkey not in pending_featured:
+                            pending_featured.append(bkey)
+                            st.session_state.profile_featured = pending_featured[:3]
+                    else:
+                        if bkey in pending_featured:
+                            pending_featured.remove(bkey)
+                            st.session_state.profile_featured = pending_featured
+        else:
+            st.info(tr("no_badges_yet", lang))
+
+        # Save button — persist to DB and go home
+        if st.button(f"💾 {tr('profile_save', lang)}", use_container_width=True, type="primary"):
+            update_user_profile(user_id,
+                                avatar=pending_avatar,
+                                theme_color=pending_theme,
+                                featured_badges=json.dumps(pending_featured[:3]))
+            # Clear pending state and redirect home
+            for k in ("profile_avatar", "profile_theme", "profile_featured", "view"):
+                st.session_state.pop(k, None)
+            st.success(f"✅ {tr('profile_saved', lang)}")
+            st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════
+# Page: Profilo Pubblico (visto da classifica)
+# ══════════════════════════════════════════════════════════════
+def public_profile_page():
+    lang = _lang()
+    target_user_id = st.session_state.get("view_user_id")
+
+    if not target_user_id:
+        st.info("Nessun utente selezionato.")
+        if st.button(tr("profile_back", lang)):
+            st.session_state.view = None
+            st.rerun()
+        return
+
+    profile = get_public_profile(target_user_id)
+    if not profile:
+        st.error("Utente non trovato.")
+        if st.button(tr("profile_back", lang)):
+            st.session_state.view = None
+            st.rerun()
+        return
+
+    xp = profile.get("xp", 0)
+    lvl, needed, progress = xp_to_next_level(xp)
+    featured = json.loads(profile.get("featured_badges", "[]")) if isinstance(profile.get("featured_badges"), str) else profile.get("featured_badges", [])
+    theme = profile.get("theme_color", "#4CAF50")
+    avatar = profile.get("avatar", "🤖")
+    total_correct = profile.get("total_correct", 0)
+    total_wrong = profile.get("total_wrong", 0)
+    accuracy = total_correct / max(total_correct + total_wrong, 1) * 100
+    all_badges = json.loads(profile.get("badges", "[]")) if isinstance(profile.get("badges"), str) else profile.get("badges", [])
+
+    st.title(f"👤 {tr('profile_public_title', lang)} {profile['username']}")
+
+    if st.button(tr("profile_back", lang)):
+        st.session_state.view = None
+        st.session_state.view_user_id = None
+        st.rerun()
+
+    _, col_main, _ = st.columns([1, 2, 1])
+    with col_main:
+        # Card profilo pubblico
+        st.markdown(textwrap.dedent(f"""
+<div style="background:linear-gradient(135deg, {theme}22, {theme}08);
+border:2px solid {theme}; border-radius:16px; padding:28px; text-align:center; margin-bottom:24px;">
+<div style="font-size:5rem;">{avatar}</div>
+<div style="font-size:1.8rem; font-weight:700; margin:8px 0;">{profile['username']}</div>
+<div style="display:flex; justify-content:center; gap:12px; margin:12px 0;">
+<span style="background:{theme}; color:#fff; padding:6px 16px; border-radius:16px; font-size:0.9rem;">
+⚡ Lv {lvl} · {xp} XP
+</span>
+</div>
+<div style="margin-top:16px; display:flex; justify-content:center; gap:8px;">
+{''.join(badge_svg(b, lang, size=40) for b in featured) if featured else f'<span style="color:#aaa; font-size:0.8rem;">{tr("profile_no_featured", lang)}</span>'}
+</div>
+</div>
+"""), unsafe_allow_html=True)
+
+        # Stats
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric(tr("total_correct_stat", lang), stats.get("total_correct", 0))
+            st.metric(tr("your_level", lang), lvl)
         with col2:
-            st.metric(tr("total_wrong_stat", lang), stats.get("total_wrong", 0))
+            st.metric("XP", xp)
         with col3:
-            st.metric(tr("modules_completed_stat", lang), stats.get("total_modules_completed", 0))
+            st.metric(tr("current_streak", lang), f"{profile.get('current_streak', 0)} {tr('days', lang)}")
         with col4:
-            st.metric(tr("paths_completed_stat", lang), stats.get("total_paths_completed", 0))
+            st.metric(tr("accuracy_stat", lang), f"{accuracy:.0f}%")
 
-        st.markdown("---")
-        total = max(stats.get("total_correct", 0) + stats.get("total_wrong", 0), 1)
-        correct_pct = stats.get("total_correct", 0) / total * 100
-        wrong_pct = stats.get("total_wrong", 0) / total * 100
-        st.markdown(f"**{tr('accuracy_stat', lang)}:** {accuracy:.1f}%")
-        st.progress(accuracy / 100)
+        col5, col6 = st.columns(2)
+        with col5:
+            st.metric(tr("modules_completed_stat", lang), profile.get("total_modules_completed", 0))
+        with col6:
+            st.metric(tr("paths_completed_stat", lang), profile.get("total_paths_completed", 0))
 
-        # Weekly activity
-        st.markdown(f"**{tr('weekly_activity', lang)}**")
-        weekly = get_user_weekly_activity(user_id)
-        if weekly:
-            import pandas as pd
-            df = pd.DataFrame(weekly)
-            df["day"] = pd.to_datetime(df["day"])
-            df = df.set_index("day")
-            st.bar_chart(df["count"], height=200)
+        # All badges
+        if all_badges:
+            st.markdown(f"#### 🎖️ {tr('badges_title', lang)} ({len(all_badges)})")
+            cols_b = st.columns(5)
+            for i, bkey in enumerate(all_badges):
+                info = badge_info(bkey, lang)
+                with cols_b[i % 5]:
+                    st.markdown(badge_svg(bkey, lang, size=36), unsafe_allow_html=True)
+                    st.markdown(f"**{info['name']}**")
         else:
-            st.info(tr("no_activity_data", lang))
-
-    with tab_learn:
-        topics = get_user_topic_stats(user_id)
-        if topics:
-            import pandas as pd
-            df_t = pd.DataFrame(topics)
-            st.markdown(f"**{tr('topic_distribution', lang)}**")
-            st.bar_chart(df_t.set_index("topic")["session_count"], height=250)
-        else:
-            st.info(tr("no_topic_data", lang))
-
-        stats = get_user_stats(user_id)
-        tl = stats.get("topics_studied", "[]")
-        tl = json.loads(tl) if isinstance(tl, str) else tl
-        if tl:
-            st.markdown(f"**{tr('topics_studied', lang)}:** {', '.join(tl)}")
+            st.info(tr("no_badges_yet", lang))
 
 
 # ══════════════════════════════════════════════════════════════
 # Navigation + Shared Sidebar
 # ══════════════════════════════════════════════════════════════
 lang = _lang()
+
+# Ensure session token is always in URL for F5 persistence
+if st.session_state.get("user"):
+    expected = _make_session_token(st.session_state.user["id"], st.session_state.user["username"])
+    if st.query_params.get("session") != expected:
+        _persist_session()
+        # _persist_session triggers rerun; next iteration token will match → no loop
+
+# ── View routing for profile / public profile ──
+if st.session_state.get("user") and st.session_state.get("view") == "profile":
+    profile_page()
+    st.stop()
+
+if st.session_state.get("user") and st.session_state.get("view") == "public_profile":
+    public_profile_page()
+    st.stop()
+
 nuovo_page = st.Page(nuovo_percorso_page, title=f"🏠 {tr('new_path_page', lang)}")
 storico_page_item = st.Page(storico_page, title=f"📚 {tr('history_page', lang)}")
 obiettivi_page_item = st.Page(obiettivi_page, title=f"🏆 {tr('achievements_page', lang)}")
@@ -1470,11 +1883,39 @@ with st.sidebar:
                          use_container_width=True,
                          type="primary" if l_code == lang else "secondary"):
                 _sync_lang(l_code)
-                st.rerun()
 
-    col_user, col_logout = st.columns([2, 1])
-    with col_user:
-        st.caption(f"👤 {st.session_state.user['username']}")
+    # ── Mini profile card (ultra-minimal) ──
+    uid = st.session_state.user["id"]
+    usn = st.session_state.user["username"]
+    pstats = get_user_stats(uid)
+    plvl, _, _ = xp_to_next_level(pstats.get("xp", 0))
+    pavatar = pstats.get("avatar", "🤖")
+    ptheme = pstats.get("theme_color", "#4CAF50")
+    pfeatured = json.loads(pstats.get("featured_badges", "[]")) if isinstance(pstats.get("featured_badges"), str) else pstats.get("featured_badges", [])
+    pbadges_svg = "".join(badge_svg(b, lang, size=24) for b in pfeatured[:3])
+    pbadge_count = len(pfeatured)
+
+    st.markdown(textwrap.dedent(f"""
+<div style="background:linear-gradient(135deg, {ptheme}18, {ptheme}06);
+border:1.5px solid {ptheme}40; border-radius:10px; padding:6px 10px; margin-bottom:10px;">
+<div style="display:flex; align-items:center; gap:10px;">
+<div style="font-size:1.6rem; line-height:1;">{pavatar}</div>
+<div style="flex:1; min-width:0;">
+<div style="font-weight:700; font-size:0.9rem; color:#eee; line-height:1.3;">{usn}</div>
+<div style="font-size:0.7rem; color:{ptheme}; display:flex; align-items:center; gap:6px;">
+<span>⚡ Lv {plvl}</span>
+{'<span>|</span> <div style="display:flex; gap:4px; align-items:center;">' + pbadges_svg + '</div>' if pbadge_count else ''}
+</div>
+</div>
+</div>
+</div>
+"""), unsafe_allow_html=True)
+
+    col_edit, col_logout = st.columns([2, 1])
+    with col_edit:
+        if st.button(f"✏️ {tr('profile_edit', lang)}", key="edit_profile_btn", use_container_width=True):
+            st.session_state.view = "profile"
+            st.rerun()
     with col_logout:
         logout_pop = st.popover("🚪", key="logout_pop")
         with logout_pop:
@@ -1483,6 +1924,7 @@ with st.sidebar:
                 st.session_state.user = None
                 st.session_state.response = None
                 st.session_state.modulo_archivio_aperto = None
+                st.session_state.view = None
                 st.query_params.clear()
                 st.rerun()
 
@@ -1493,12 +1935,6 @@ with st.sidebar:
         level = st.selectbox(f"📊 {tr('sidebar_level', lang)}",
                              ["", tr('base', lang), tr('intermediate', lang), tr('advanced', lang)],
                              key="level")
-        num_modules = st.select_slider(
-            f"📦 {tr('sidebar_modules_count', lang)}",
-            options=[3, 5, 7],
-            value=3,
-            key="num_modules",
-        )
         name = st.text_input(f"👤 {tr('name_optional', lang)}", key="name",
                              placeholder=tr('sidebar_name_placeholder', lang))
 
@@ -1525,8 +1961,7 @@ with st.sidebar:
                         context = sim if sim else None
 
                         st.session_state.response = generate_microlearning_path(
-                            topic, level, context_modules=context, lang=lang,
-                            num_modules=num_modules,
+                            topic, level, context_modules=context, lang=lang
                         )
                         st.session_state.response_lang = lang
                         st.session_state.archiviati_lang = lang

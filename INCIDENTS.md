@@ -203,3 +203,25 @@ Registro degli errori tecnici e dei bug riscontrati durante lo sviluppo.
 ## [6 Luglio 2026] - Persistenza sessione al refresh
 - **Errore:** Fare F5 riportava alla pagina di login perché `st.session_state` non sopravvive al refresh del browser.
 - **Soluzione:** Implementato session token firmato (SHA-256) salvato in `st.query_params`. Al refresh, il token viene verificato e l'utente auto-autenticato.
+
+## [7 Luglio 2026] - Nuovi badge, profilo utente e logo
+
+**Nuovi badge (9):** Aggiunti badge Centenario, Poliglotta, Enciclopedico, Collezionista, Saggio, Nottambulo, Fenice, Fulmine, Modulo Perfetto.
+- **DB:** Nuove colonne `langs_used`, `night_sessions`, `perfect_modules`, `phoenix_earned`, `avatar`, `theme_color`, `featured_badges` in `user_stats`.
+- **Nota:** `update_streak` ora restituisce 3 valori `(streak, max_streak, is_phoenix)` — aggiornati tutti i chiamanti.
+
+**Badge SVG (doppio anello):** Sostituite emoji con SVG generati via `badge_svg()` in `gamification.py`.
+- 5 categorie colore: moduli (verde), precisione (blu), streak (arancione), livelli (viola), traguardi (oro).
+- Counter globale `_svg_counter` per evitare conflitti ID gradiente in pagina.
+
+**Galleria badge:** Tab "Galleria Badge" in Obiettivi con tutti i badge (sbloccati/bloccati) in griglia 4x4.
+
+**Profilo utente:** Sistema di personalizzazione profilo con avatar (16 emoji), colore tema (8 colori), badge in vetrina (max 3).
+- Mini-card compatta nella sidebar con avatar, nome, livello e badge SVG.
+- Pagina profilo pubblico accessibile cliccando username nella classifica.
+- **Errore:** Avatar non persisteva dopo click — i bottoni usavano variabili locali perse al rerun.
+- **Soluzione:** Spostata selezione avatar/colore in `st.session_state` (`profile_avatar`, `profile_theme`, `profile_featured`).
+
+**Logo MLPG (work in progress):** Logo SVG generato via Claude, cartuccia SNES + robot + glow.
+- **Errore:** Logo non visibile in sidebar con `st.markdown` (codice SVG visualizzato come testo) e `st.image()` (immagine rotta).
+- **Soluzione:** Rimosso temporaneamente dalla sidebar. Il file `logos/mlpg_logo.svg` è salvato per perfezionamento futuro.

@@ -2,10 +2,9 @@ import os
 import json
 import math
 import functools
+import bcrypt
 import hashlib
-from passlib.hash import bcrypt as _passlib_bcrypt
 import logging
-import sqlite3
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -17,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(dotenv_path=PROJECT_ROOT / '.env')
-DB_DIR = PROJECT_ROOT / 'data'
-DB_PATH = DB_DIR / 'mlpg_history.db'
 
 # ── Backend detection ──────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -72,16 +69,11 @@ class _DB:
 
 
 def _get_conn():
-    if IS_PG:
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
-        conn.autocommit = False
-        return _DB(conn, "pg")
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return _DB(conn, "sqlite")
+    if not IS_PG:
+        raise RuntimeError("DATABASE_URL non configurato. Impostare DATABASE_URL nel file .env")
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.autocommit = False
+    return _DB(conn, "pg")
 
 
 def _insert_returning_id(conn, sql: str, params: tuple) -> int:
@@ -105,77 +97,6 @@ def _exec_ddl(conn, statements: list[str]):
         cur.execute(stmt)
     cur.close()
 
-
-SCHEMA_SQLITE = """
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER REFERENCES users(id),
-    topic TEXT NOT NULL,
-    level TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    riepilogo TEXT
-);
-
-CREATE TABLE IF NOT EXISTS modules (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
-    module_index INTEGER NOT NULL,
-    titolo TEXT NOT NULL,
-    spiegazione TEXT NOT NULL,
-    esercizio TEXT NOT NULL,
-    completed INTEGER DEFAULT 0,
-    archived INTEGER DEFAULT 0,
-    embedding TEXT,
-    FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-
-CREATE TABLE IF NOT EXISTS attempts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    module_id INTEGER NOT NULL,
-    soluzione TEXT,
-    esito TEXT,
-    feedback_json TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (module_id) REFERENCES modules(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
-CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
-
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    token TEXT UNIQUE NOT NULL,
-    expires_at TEXT NOT NULL,
-    used INTEGER DEFAULT 0,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
-CREATE TABLE IF NOT EXISTS user_stats (
-    user_id INTEGER PRIMARY KEY,
-    xp INTEGER DEFAULT 0,
-    level INTEGER DEFAULT 1,
-    current_streak INTEGER DEFAULT 0,
-    max_streak INTEGER DEFAULT 0,
-    last_active_date TEXT,
-    badges TEXT DEFAULT '[]',
-    total_correct INTEGER DEFAULT 0,
-    total_wrong INTEGER DEFAULT 0,
-    total_modules_completed INTEGER DEFAULT 0,
-    total_paths_completed INTEGER DEFAULT 0,
-    total_sessions INTEGER DEFAULT 0,
-    topics_studied TEXT DEFAULT '[]',
-    consecutive_correct INTEGER DEFAULT 0,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-"""
 
 SCHEMA_PG = """
 CREATE TABLE IF NOT EXISTS users (
@@ -218,15 +139,8 @@ CREATE TABLE IF NOT EXISTS attempts (
 CREATE INDEX IF NOT EXISTS idx_modules_session ON modules(session_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_module ON attempts(module_id);
 
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    token TEXT UNIQUE NOT NULL,
-    expires_at TEXT NOT NULL,
-    used INTEGER DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
     xp INTEGER DEFAULT 0,
     level INTEGER DEFAULT 1,
     current_streak INTEGER DEFAULT 0,
@@ -239,20 +153,39 @@ CREATE TABLE IF NOT EXISTS user_stats (
     total_paths_completed INTEGER DEFAULT 0,
     total_sessions INTEGER DEFAULT 0,
     topics_studied TEXT DEFAULT '[]',
-    consecutive_correct INTEGER DEFAULT 0
+    consecutive_correct INTEGER DEFAULT 0,
+    langs_used TEXT DEFAULT '[]',
+    night_sessions INTEGER DEFAULT 0,
+    perfect_modules INTEGER DEFAULT 0,
+    phoenix_earned INTEGER DEFAULT 0,
+    avatar TEXT DEFAULT '🤖',
+    theme_color TEXT DEFAULT '#4CAF50',
+    featured_badges TEXT DEFAULT '[]'
 );
 """
 
 
 def init_db():
     conn = _get_conn()
-    statements = (SCHEMA_PG if IS_PG else SCHEMA_SQLITE).strip().split(";")
+    statements = SCHEMA_PG.strip().split(";")
     _exec_ddl(conn, [s.strip() + ";" for s in statements if s.strip()])
-    if not IS_PG:
-        cursor = conn.execute("PRAGMA table_info(sessions)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "user_id" not in cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+    # Migrations for new gamification columns
+    migrations = [
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS langs_used TEXT DEFAULT '[]'",
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS night_sessions INTEGER DEFAULT 0",
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS perfect_modules INTEGER DEFAULT 0",
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS phoenix_earned INTEGER DEFAULT 0",
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '🤖'",
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS theme_color TEXT DEFAULT '#4CAF50'",
+        "ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS featured_badges TEXT DEFAULT '[]'",
+    ]
+    for m in migrations:
+        try:
+            conn.execute(m)
+        except Exception:
+            pass  # column already exists or unsupported PG version
+
     conn.commit()
     conn.close()
 
@@ -306,20 +239,13 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 # ── autenticazione ──────────────────────────────────────────
 
 def _hash_password(password: str) -> str:
-    return _passlib_bcrypt.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def _verify_password(password: str, hashed: str) -> bool:
     try:
-        if hashed.startswith("$2"):
-            return _passlib_bcrypt.verify(password, hashed)
-        if ":" in hashed:
-            salt_hex, dk_hex = hashed.split(":", 1)
-            salt = bytes.fromhex(salt_hex)
-            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000)
-            return dk.hex() == dk_hex
-        return False
-    except (ValueError, AttributeError):
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except ValueError:
         return False
 
 
@@ -342,9 +268,7 @@ def create_user(username: str, password: str) -> int | None:
         conn.close()
         return uid
     except Exception as exc:
-        if IS_PG and isinstance(exc, psycopg2.errors.UniqueViolation):
-            logger.warning("Username già esistente: %s", username)
-        elif not IS_PG and "UNIQUE constraint" in str(exc):
+        if isinstance(exc, psycopg2.errors.UniqueViolation):
             logger.warning("Username già esistente: %s", username)
         else:
             logger.error("Errore creazione utente: %s", exc, exc_info=True)
@@ -435,7 +359,8 @@ def get_leaderboard(limit: int = 10) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         _adapt(
-            "SELECT u.username, s.xp, s.level, s.current_streak, s.total_modules_completed "
+            "SELECT u.id as user_id, u.username, s.xp, s.level, s.current_streak, "
+            "s.total_modules_completed, s.avatar, s.theme_color, s.featured_badges "
             "FROM user_stats s JOIN users u ON s.user_id = u.id "
             "ORDER BY s.xp DESC LIMIT ?"
         ),
@@ -443,6 +368,36 @@ def get_leaderboard(limit: int = 10) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_public_profile(user_id: int) -> dict | None:
+    """Get public profile data for a user."""
+    conn = _get_conn()
+    row = conn.execute(
+        _adapt(
+            "SELECT u.username, s.xp, s.level, s.current_streak, s.max_streak, "
+            "s.total_correct, s.total_wrong, s.total_modules_completed, "
+            "s.total_paths_completed, s.avatar, s.theme_color, s.featured_badges, s.badges "
+            "FROM user_stats s JOIN users u ON s.user_id = u.id "
+            "WHERE s.user_id = ?"
+        ),
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_user_profile(user_id: int, avatar: str = None, theme_color: str = None, featured_badges: str = None):
+    """Update profile customization fields."""
+    updates = {}
+    if avatar is not None:
+        updates["avatar"] = avatar
+    if theme_color is not None:
+        updates["theme_color"] = theme_color
+    if featured_badges is not None:
+        updates["featured_badges"] = featured_badges
+    if updates:
+        update_user_stats(user_id, updates)
 
 
 def get_user_topic_stats(user_id: int) -> list[dict]:
@@ -501,7 +456,7 @@ def award_user_xp(user_id: int | None, reason: str, topic: str = "", is_first_tr
 
     current_xp = stats.get("xp", 0) + xp_gain
     new_level = level_from_xp(current_xp)
-    new_streak, new_max = update_streak(stats)
+    new_streak, new_max, is_phoenix = update_streak(stats)
 
     updates = {
         "xp": current_xp,
@@ -521,6 +476,19 @@ def award_user_xp(user_id: int | None, reason: str, topic: str = "", is_first_tr
 
     if reason == "path_completed":
         updates["total_paths_completed"] = stats.get("total_paths_completed", 0) + 1
+
+    # Night owl tracking
+    from datetime import datetime as dt
+    if dt.now().hour >= 22:
+        updates["night_sessions"] = stats.get("night_sessions", 0) + 1
+
+    # Perfect module tracking
+    if reason == "module_completed" and is_first_try:
+        updates["perfect_modules"] = stats.get("perfect_modules", 0) + 1
+
+    # Phoenix tracking
+    if is_phoenix:
+        updates["phoenix_earned"] = 1
 
     if topic:
         topics = json.loads(stats.get("topics_studied", "[]")) if isinstance(stats.get("topics_studied"), str) else stats.get("topics_studied", [])
@@ -545,7 +513,7 @@ def track_wrong_answer(user_id: int | None):
     if not user_id:
         return
     stats = ensure_user_stats(user_id)
-    new_streak, new_max = update_streak(stats)
+    new_streak, new_max, _ = update_streak(stats)
     updates = {
         "total_wrong": stats.get("total_wrong", 0) + 1,
         "consecutive_correct": 0,
@@ -555,6 +523,24 @@ def track_wrong_answer(user_id: int | None):
         "total_sessions": stats.get("total_sessions", 0) + 1,
     }
     update_user_stats(user_id, updates)
+
+
+def track_lang_usage(user_id: int | None, lang: str):
+    """Track which languages the user has used (for Polyglot badge)."""
+    import json
+    if not user_id or not lang:
+        return
+    stats = ensure_user_stats(user_id)
+    langs = json.loads(stats.get("langs_used", "[]")) if isinstance(stats.get("langs_used"), str) else stats.get("langs_used", [])
+    if lang not in langs:
+        langs.append(lang)
+        update_user_stats(user_id, {"langs_used": json.dumps(langs)})
+        # Re-check badges after adding language
+        updated_stats = {**stats, "langs_used": json.dumps(langs)}
+        from .gamification import check_badges
+        new_badges, all_badges = check_badges(updated_stats)
+        if new_badges:
+            update_user_stats(user_id, {"badges": json.dumps(all_badges)})
 
 
 def backfill_user_stats():
@@ -803,76 +789,18 @@ def save_riepilogo(session_id: int, riepilogo_text: str):
     conn.close()
 
 
-# ── password reset ──────────────────────────────────────────
-
-def create_password_reset_token(username: str) -> str | None:
-    """Crea un token di reset per l'utente. Restituisce il token o None."""
-    import secrets
-    conn = _get_conn()
-    row = conn.execute(
-        _adapt("SELECT id FROM users WHERE username = ?"),
-        (username,),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return None
-    user_id = row["id"]
-    token = secrets.token_urlsafe(32)
-    from datetime import datetime, timedelta
-    expires_at = (datetime.now() + timedelta(hours=1)).isoformat()
-    conn.execute(
-        _adapt("INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, ?)"),
-        (user_id, token, expires_at),
-    )
-    conn.commit()
-    conn.close()
-    return token
-
-
-def reset_password_with_token(token: str, new_password: str) -> bool:
-    """Resetta la password usando un token valido."""
-    from datetime import datetime
-    conn = _get_conn()
-    row = conn.execute(
-        _adapt("SELECT user_id, expires_at, used FROM password_reset_tokens WHERE token = ?"),
-        (token,),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return False
-    if row["used"]:
-        conn.close()
-        return False
-    if datetime.now().isoformat() > row["expires_at"]:
-        conn.close()
-        return False
-    hashed = _hash_password(new_password)
-    conn.execute(
-        _adapt("UPDATE users SET password = ? WHERE id = ?"),
-        (hashed, row["user_id"]),
-    )
-    conn.execute(
-        _adapt("UPDATE password_reset_tokens SET used = 1 WHERE token = ?"),
-        (token,),
-    )
-    conn.commit()
-    conn.close()
-    return True
-
-
 # ── lettura storico ────────────────────────────────────────
 
-def get_all_sessions(user_id: int | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
+def get_all_sessions(user_id: int | None = None) -> list[dict]:
     conn = _get_conn()
     if user_id:
         rows = conn.execute(
-            _adapt("SELECT id, topic, level, created_at, riepilogo FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"),
-            (user_id, limit, offset),
+            _adapt("SELECT id, topic, level, created_at, riepilogo FROM sessions WHERE user_id = ? ORDER BY created_at DESC"),
+            (user_id,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, topic, level, created_at, riepilogo FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            "SELECT id, topic, level, created_at, riepilogo FROM sessions ORDER BY created_at DESC"
         ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
